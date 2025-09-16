@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="external_files" path="." />
+    <external-path name="external" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <files-path name="files" path="." />
+    <files-path name="app_flutter_root" path="app_flutter" />
+    <cache-path name="cache" path="." />
+</paths>

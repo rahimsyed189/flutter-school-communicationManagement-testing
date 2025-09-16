@@ -1,0 +1,135 @@
+{
+  "project_info": {
+    "project_number": "402790849608",
+    "firebase_url": "https://adilabadautocabs-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "adilabadautocabs",
+    "storage_bucket": "adilabadautocabs.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402790849608:android:211adb63db4aeca002cc7d",
+        "android_client_info": {
+          "package_name": "com.adbsmalltech.adbapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402790849608-s5f6b6vcjat5q3s5enfsgtommi9vvtl8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adbsmalltech.adbapp",
+            "certificate_hash": "58db6bd2f581db728fcd9cb8b5d8882c1912f23e"
+          }
+        },
+        {
+          "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7wD5in4xp1u8R0zq9jMiCr9NW0TnHqCo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402790849608-hjfn9s2gubcro96fggfkhj3bapopqm63.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.schoolCommunicationApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402790849608:android:d7cb2d0cdbd91fef02cc7d",
+        "android_client_info": {
+          "package_name": "com.example.adilabad_autos_cabs"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402790849608-brdnbq1a4a2r11pmp1vu2bvu7i1q2s8a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.adilabad_autos_cabs",
+            "certificate_hash": "4ac3d4304d8b409d66d8e9853d55769e67604e9c"
+          }
+        },
+        {
+          "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7wD5in4xp1u8R0zq9jMiCr9NW0TnHqCo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402790849608-hjfn9s2gubcro96fggfkhj3bapopqm63.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.schoolCommunicationApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402790849608:android:78d50f2cb0f6338a02cc7d",
+        "android_client_info": {
+          "package_name": "com.example.flutter_prompt_struct"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7wD5in4xp1u8R0zq9jMiCr9NW0TnHqCo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402790849608-349efhfrh7dmc51s16ujr51iqb3isplj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402790849608-hjfn9s2gubcro96fggfkhj3bapopqm63.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.schoolCommunicationApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

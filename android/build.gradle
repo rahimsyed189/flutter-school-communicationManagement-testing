@@ -1,0 +1,46 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+    classpath 'com.google.gms:google-services:4.4.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+// AGP 8+ requires a namespace in every Android library. Some third-party Flutter plugins
+// may not declare it yet. This block assigns a safe fallback namespace to any subproject
+// that applies the Android plugin but has no namespace set, preventing build failures like:
+// "Namespace not specified. Specify a namespace in the module's build file."
+subprojects { subproject ->
+    // Configure only Android library modules (plugins) that may miss a namespace
+    subproject.plugins.withId('com.android.library') {
+        def androidExt = subproject.extensions.findByName('android')
+        if (androidExt != null && androidExt.hasProperty('namespace')) {
+            def current = androidExt.namespace
+            if (current == null || current.toString().trim().isEmpty()) {
+                def safeName = subproject.name.replaceAll('[^A-Za-z0-9_]', '_')
+                androidExt.namespace = "com.autogen.${safeName}"
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

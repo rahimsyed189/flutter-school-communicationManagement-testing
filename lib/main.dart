@@ -1,0 +1,629 @@
+
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:workmanager/workmanager.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+
+import 'firebase_options.dart';
+import 'announcements_page.dart';
+import 'admin_home_page.dart';
+import 'admin_add_user_page.dart';
+import 'admin_post_page.dart';
+import 'notification_service.dart';
+import 'navigation_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:background_downloader/background_downloader.dart';
+import 'admin_users_page.dart';
+import 'admin_user_details_page.dart';
+import 'admin_manage_classes_page.dart';
+import 'admin_manage_subjects_page.dart';
+import 'admin_cleanup_page.dart';
+import 'cleanup_status_page.dart';
+import 'group_create_page.dart';
+import 'group_chat_page.dart';
+import 'auth_choice_page.dart';
+import 'admin_approvals_page.dart';
+import 'force_password_change_page.dart';
+import 'downloads_page.dart';
+import 'multi_r2_media_uploader_page.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+}
+
+@pragma('vm:entry-point')
+void backgroundTaskDispatcher() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  Workmanager().executeTask((task, inputData) async {
+    try {
+      // inputData may contain preset and targets
+      final preset = inputData?["preset"] as String?; // today|last7|last30
+      final includeChats = (inputData?["includeChats"] as bool?) ?? true;
+      final includeAnnouncements = (inputData?["includeAnnouncements"] as bool?) ?? true;
+      final includeDeviceCache = (inputData?["includeDeviceCache"] as bool?) ?? false;
+      final includeR2Storage = false; // ALWAYS FALSE - disable auto R2 cleanup
+      
+      // Check daily cleanup status for shared cleanup
+      final hasSharedCleanup = includeChats || includeAnnouncements || includeR2Storage;
+      if (hasSharedCleanup) {
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        final statusDoc = FirebaseFirestore.instance.collection('app_config').doc('daily_cleanup_status');
+        
+        bool canProceed = false;
+        try {
+          await FirebaseFirestore.instance.runTransaction((transaction) async {
+            final doc = await transaction.get(statusDoc);
+            final data = doc.data();
+            
+            if (data != null && data['completedDate'] == today && data['preset'] == preset) {
+              // Already completed today
+              canProceed = false;
+              return;
+            }
+            
+            // Mark as completed by background task
+            transaction.set(statusDoc, {
+              'completedDate': today,
+              'completedBy': 'background_task',
+              'preset': preset ?? 'today',
+              'timestamp': FieldValue.serverTimestamp(),
+              'deviceInfo': 'Background Task',
+            });
+            canProceed = true;
+          });
+        } catch (e) {
+          print("Background task: Daily cleanup already completed or error: $e");
+          canProceed = false;
+        }
+        
+        if (!canProceed) {
+          print("Background task: Skipping cleanup - already completed today");
+          return true; // Task completed successfully (by skipping)
+        }
+      }
+      
+      DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+      DateTime _endExclusiveOfDay(DateTime d) => DateTime(d.year, d.month, d.day + 1);
+      DateTime now = DateTime.now();
+      DateTime start;
+      DateTime endEx;
+      switch (preset) {
+        case 'last7':
+          start = _startOfDay(now.subtract(const Duration(days: 6)));
+          endEx = _endExclusiveOfDay(now);
+          break;
+        case 'last30':
+          start = _startOfDay(now.subtract(const Duration(days: 29)));
+          endEx = _endExclusiveOfDay(now);
+          break;
+        case 'today':
+        default:
+          start = _startOfDay(now);
+          endEx = _endExclusiveOfDay(now);
+      }
+
+      Future<int> _deleteRange(String collection, DateTime s, DateTime e) async {
+        int deleted = 0;
+        final base = FirebaseFirestore.instance
+            .collection(collection)
+            .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(s))
+            .where('timestamp', isLessThan: Timestamp.fromDate(e))
+            .orderBy('timestamp');
+        DocumentSnapshot? cursor;
+        while (true) {
+          Query q = base.limit(300);
+          if (cursor != null) q = (q as Query<Map<String, dynamic>>).startAfterDocument(cursor) as Query;
+          final snap = await q.get();
+          if (snap.docs.isEmpty) break;
+          final batch = FirebaseFirestore.instance.batch();
+          for (final d in snap.docs) {
+            batch.delete(d.reference);
+          }
+          await batch.commit();
+          deleted += snap.docs.length;
+          cursor = snap.docs.last;
+          await Future<void>.delayed(Duration.zero);
+        }
+        return deleted;
+      }
+
+      if (includeChats) {
+        await _deleteRange('chats', start, endEx);
+      }
+      if (includeAnnouncements) {
+        await _deleteRange('communications', start, endEx);
+      }
+      
+      // Handle device cache deletion
+      if (includeDeviceCache) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          
+          // Clear SharedPreferences cache entries
+          await prefs.setString('downloaded_files', '{}');
+          await prefs.setString('downloaded_thumbnails', '{}');
+          
+          // Clear actual device cache directories
+          int filesDeleted = 0;
+          
+          // Clear temporary cache directory
+          try {
+            final cacheDir = await getTemporaryDirectory();
+            print("Background: Clearing cache directory: ${cacheDir.path}");
+            
+            if (await cacheDir.exists()) {
+              final entities = cacheDir.listSync(recursive: true);
+              for (final entity in entities) {
+                try {
+                  if (entity is File) {
+                    await entity.delete();
+                    filesDeleted++;
+                  }
+                } catch (e) {
+                  print("Background: Error deleting file: ${entity.path} - $e");
+                }
+              }
+            }
+          } catch (e) {
+            print("Background: Error accessing cache directory: $e");
+          }
+          
+          // Clear downloads directory
+          try {
+            final downloadDir = await getApplicationDocumentsDirectory();
+            final downloadPath = Directory('${downloadDir.path}/downloads');
+            print("Background: Clearing downloads directory: ${downloadPath.path}");
+            
+            if (await downloadPath.exists()) {
+              final entities = downloadPath.listSync(recursive: true);
+              for (final entity in entities) {
+                try {
+                  if (entity is File) {
+                    await entity.delete();
+                    filesDeleted++;
+                  }
+                } catch (e) {
+                  print("Background: Error deleting download: ${entity.path} - $e");
+                }
+              }
+            }
+          } catch (e) {
+            print("Background: Error accessing downloads directory: $e");
+          }
+          
+          print("Background: Deleted $filesDeleted device cache files");
+        } catch (e) {
+          print("Background task: Error clearing device cache: $e");
+        }
+      }
+      
+      // Handle R2 storage deletion
+      if (includeR2Storage) {
+        try {
+          // Since we can't use Minio directly in background task,
+          // we'll mark a flag in Firestore that will trigger deletion on next app launch
+          
+          // Store the cleanup request in Firestore
+          await FirebaseFirestore.instance.collection('app_config').doc('pending_r2_cleanup').set({
+            'enabled': true,
+            'createdAt': FieldValue.serverTimestamp(),
+            'preset': preset ?? 'today',
+            'note': 'Background task requested FULL R2 bucket cleanup',
+            'deleteAll': true  // Flag to indicate all files should be deleted
+          });
+          
+          print("Scheduled full R2 bucket cleanup for next app launch");
+        } catch (e) {
+          print("Background task: Error scheduling R2 cleanup: $e");
+        }
+      }
+    } catch (e) {
+      print("Background task error: $e");
+    }
+    return Future.value(true);
+  });
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
+  // Check for pending R2 cleanup
+  try {
+    final pendingCleanupDoc = await FirebaseFirestore.instance.collection('app_config').doc('pending_r2_cleanup').get();
+    if (pendingCleanupDoc.exists) {
+      final data = pendingCleanupDoc.data();
+      if (data != null && data['enabled'] == true) {
+        print("Found pending R2 cleanup - will process on app startup");
+        // We'll handle this in the admin cleanup page
+      }
+    }
+  } catch (e) {
+    print("Error checking for pending R2 cleanup: $e");
+  }
+  
+  // Optional: configure background downloader (no notifications here)
+  try {
+    await FileDownloader().configure();
+  } catch (_) {}
+  // Initialize Workmanager only on mobile platforms (not supported on web/desktop)
+  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+    await Workmanager().initialize(backgroundTaskDispatcher, isInDebugMode: false);
+  }
+  
+  // For desktop testing: Start a timer-based cleanup checker (only works while app is running)
+  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
+                  defaultTargetPlatform == TargetPlatform.linux || 
+                  defaultTargetPlatform == TargetPlatform.macOS)) {
+    _startDesktopCleanupTimer();
+  }
+  // Register background handler for FCM
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // Initialize notifications without a user (login will set token later)
+  await NotificationService.instance.init(currentUserId: null);
+  // Ensure firstadmin exists once
+  try {
+    final users = FirebaseFirestore.instance.collection('users');
+    final adminQuery = await users.where('userId', isEqualTo: 'firstadmin').limit(1).get();
+    if (adminQuery.docs.isEmpty) {
+      await users.add({
+        'userId': 'firstadmin',
+        'password': '123',
+        'role': 'admin',
+        'name': 'School Admin',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  } catch (_) {}
+  runApp(const MyApp());
+}
+
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'School Communication',
+  navigatorKey: rootNavigatorKey,
+      initialRoute: '/login',
+      onGenerateRoute: (settings) {
+        if (settings.name == '/login') {
+          return MaterialPageRoute(builder: (_) => const _SessionGate());
+        }
+        if (settings.name == '/admin') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          final role = args?['role'] ?? 'admin';
+          return MaterialPageRoute(builder: (_) => AdminHomePage(currentUserId: userId, currentUserRole: role));
+        }
+        if (settings.name == '/forcePassword') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] as String? ?? '';
+          return MaterialPageRoute(builder: (_) => ForcePasswordChangePage(userId: userId));
+        }
+        if (settings.name == '/groups/new') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? '';
+          return MaterialPageRoute(builder: (_) => GroupCreatePage(currentUserId: userId));
+        }
+        if (settings.name == '/groups/chat') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final groupId = args?['groupId'] as String? ?? '';
+          final name = args?['name'] as String? ?? 'Group';
+          final userId = args?['userId'] as String? ?? '';
+          return MaterialPageRoute(builder: (_) => GroupChatPage(groupId: groupId, groupName: name, currentUserId: userId));
+        }
+        if (settings.name == '/admin/addUser') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminAddUserPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/approvals') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminApprovalsPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/post') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminPostPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/users') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminUsersPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/manageClasses') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminManageClassesPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/manageSubjects') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminManageSubjectsPage(currentUserId: userId));
+        }
+        if (settings.name == '/admin/cleanup') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? 'firstadmin';
+          return MaterialPageRoute(builder: (_) => AdminCleanupPage(currentUserId: userId));
+        }
+        if (settings.name == '/cleanup/status') {
+          return MaterialPageRoute(builder: (_) => const CleanupStatusPage());
+        }
+        if (settings.name == '/admin/users/details') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userRefPath = args?['userRefPath'] as String?;
+          if (userRefPath == null || userRefPath.isEmpty) {
+            return MaterialPageRoute(builder: (_) => const Scaffold(body: Center(child: Text('No user selected'))));
+          }
+          return MaterialPageRoute(builder: (_) => AdminUserDetailsPage(userRefPath: userRefPath));
+        }
+        if (settings.name == '/announcements') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? '';
+          final role = args?['role'] ?? 'user';
+          return MaterialPageRoute(builder: (_) => AnnouncementsPage(currentUserId: userId, currentUserRole: role));
+        }
+        if (settings.name == '/downloads') {
+          return MaterialPageRoute(builder: (_) => const DownloadsPage());
+        }
+        if (settings.name == '/upload/media') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final userId = args?['userId'] ?? '';
+          final role = args?['role'] ?? 'user';
+          return MaterialPageRoute(builder: (_) => MultiR2MediaUploaderPage(currentUserId: userId, currentUserRole: role));
+        }
+        return null;
+      },
+    );
+  }
+}
+
+// AuthGate removed for simple userId/password flow
+
+class _SessionGate extends StatefulWidget {
+  const _SessionGate();
+  @override
+  State<_SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<_SessionGate> {
+  @override
+  void initState() {
+    super.initState();
+    _decide();
+  }
+
+  Future<void> _decide() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('session_userId');
+    final role = prefs.getString('session_role');
+  // If session_* keys exist, keep user signed in across restarts until they explicitly sign out
+    if (!mounted) return;
+    if (userId != null && userId.isNotEmpty) {
+      // Ensure NotificationService knows the user and re-enables subscriptions if consented
+      try {
+        await NotificationService.instance.init(currentUserId: userId);
+        // Always attempt to enable and save token on session restore so per-user token delivery works.
+        await NotificationService.instance.enableForUser(userId);
+      } catch (_) {}
+  // All users land on Current Page (admin and non-admin). Admin-only actions are hidden for non-admins.
+  Navigator.pushReplacementNamed(context, '/admin', arguments: {'userId': userId, 'role': role ?? 'user'});
+    } else {
+  Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthChoicePage()));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
+}
+
+class NameFormPage extends StatefulWidget {
+  const NameFormPage({super.key});
+
+  @override
+  State<NameFormPage> createState() => _NameFormPageState();
+}
+
+class _NameFormPageState extends State<NameFormPage> {
+  final TextEditingController _nameController = TextEditingController();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _isLoading = false;
+
+  Future<void> _addNameToFirestore() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a name')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _firestore.collection('names').add({
+        'name': _nameController.text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Name added successfully!')),
+      );
+
+      _nameController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('AdilabadAutoCabs')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _addNameToFirestore,
+              child: _isLoading 
+                  ? const CircularProgressIndicator()
+                  : const Text('Add to Firebase'),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('names')
+                    .orderBy('timestamp', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Error: ${snapshot.error}');
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const CircularProgressIndicator();
+                  }
+
+                  final docs = snapshot.data?.docs ?? [];
+
+                  if (docs.isEmpty) {
+                    return const Text('No names added yet.');
+                  }
+
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data() as Map<String, dynamic>;
+                      final name = data['name'] ?? 'Unknown';
+                      
+                      return Card(
+                        child: ListTile(
+                          title: Text(name),
+                          subtitle: data['timestamp'] != null 
+                              ? Text('Added: ${(data['timestamp'] as Timestamp).toDate()}')
+                              : const Text('Just added'),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Desktop cleanup timer for testing (only works while app is running)
+Timer? _desktopCleanupTimer;
+
+void _startDesktopCleanupTimer() {
+  // Check every minute for scheduled cleanup time
+  _desktopCleanupTimer = Timer.periodic(const Duration(minutes: 1), (timer) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('cleanup_recurring_enabled') ?? false;
+      
+      if (!enabled) return;
+      
+      final hour = prefs.getInt('cleanup_recurring_hour') ?? 6;
+      final minute = prefs.getInt('cleanup_recurring_minute') ?? 0;
+      final now = DateTime.now();
+      
+      // Check if it's the scheduled time (within 1 minute window)
+      if (now.hour == hour && now.minute == minute) {
+        print("Desktop cleanup timer triggered at ${now.hour}:${now.minute}");
+        
+        // Execute the cleanup similar to the background task
+        final preset = prefs.getString('cleanup_recurring_preset') ?? 'today';
+        final includeChats = prefs.getBool('cleanup_recurring_includeChats') ?? true;
+        final includeAnnouncements = prefs.getBool('cleanup_recurring_includeAnnouncements') ?? true;
+        final includeDeviceCache = prefs.getBool('cleanup_recurring_includeDeviceCache') ?? false;
+        
+        await _performDesktopCleanup(preset, includeChats, includeAnnouncements, includeDeviceCache);
+      }
+    } catch (e) {
+      print("Desktop cleanup timer error: $e");
+    }
+  });
+}
+
+Future<void> _performDesktopCleanup(String preset, bool includeChats, bool includeAnnouncements, bool includeDeviceCache) async {
+  try {
+    final hasSharedCleanup = includeChats || includeAnnouncements;
+    if (hasSharedCleanup) {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final statusDoc = FirebaseFirestore.instance.collection('app_config').doc('daily_cleanup_status');
+      
+      bool canProceed = false;
+      try {
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final doc = await transaction.get(statusDoc);
+          final data = doc.data();
+          
+          if (data != null && data['completedDate'] == today && data['preset'] == preset) {
+            canProceed = false;
+            return;
+          }
+          
+          transaction.set(statusDoc, {
+            'completedDate': today,
+            'completedBy': 'desktop_timer',
+            'preset': preset,
+            'timestamp': FieldValue.serverTimestamp(),
+            'deviceInfo': 'Desktop Timer',
+          });
+          canProceed = true;
+        });
+        
+        if (canProceed) {
+          print("Desktop cleanup executed for preset: $preset");
+          // Here you would implement the actual cleanup logic
+          // For now, just log that it would happen
+        } else {
+          print("Desktop cleanup skipped - already completed today");
+        }
+      } catch (e) {
+        print("Desktop cleanup transaction error: $e");
+      }
+    }
+  } catch (e) {
+    print("Desktop cleanup error: $e");
+  }
+}

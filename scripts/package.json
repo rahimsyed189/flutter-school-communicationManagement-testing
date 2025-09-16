@@ -1,0 +1,17 @@
+{
+  "name": "r2-cleanup-script",
+  "version": "1.0.0",
+  "description": "R2/S3 cleanup script for Flutter app",
+  "main": "r2-cleanup.js",
+  "scripts": {
+    "cleanup": "node r2-cleanup.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1691.0",
+    "firebase-admin": "^12.6.0"
+  },
+  "keywords": ["r2", "cleanup", "firebase", "storage"],
+  "author": "",
+  "license": "ISC"
+}

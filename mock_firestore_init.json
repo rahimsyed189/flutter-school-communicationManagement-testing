@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "userId": "firstadmin",
+      "password": "123",
+      "role": "admin",
+      "name": "School Admin"
+    }
+  ]
+}
