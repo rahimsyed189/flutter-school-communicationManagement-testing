@@ -11,6 +11,7 @@ enum ComponentType {
   coloredContainer,
   imageContainer,
   iconContainer,
+  gradientSeparator,
 }
 
 // Base class for all draggable components
@@ -54,6 +55,8 @@ abstract class DraggableComponent {
         return ImageContainerComponent.fromJson(json);
       case 'iconContainer':
         return IconContainerComponent.fromJson(json);
+      case 'gradientSeparator':
+        return GradientSeparatorComponent.fromJson(json);
       default:
         throw Exception('Unknown component type: ${json['type']}');
     }
@@ -1420,6 +1423,237 @@ class IconContainerComponent extends DraggableComponent {
 
   factory IconContainerComponent.fromJson(Map<String, dynamic> json) {
     return IconContainerComponent(
+      id: json['id'],
+      x: json['x']?.toDouble() ?? 0,
+      y: json['y']?.toDouble() ?? 0,
+      properties: json['properties'],
+    );
+  }
+}
+
+class GradientSeparatorComponent extends DraggableComponent {
+  GradientSeparatorComponent({
+    required String id,
+    double x = 0,
+    double y = 0,
+    Map<String, dynamic>? properties,
+  }) : super(
+          id: id,
+          type: ComponentType.gradientSeparator,
+          x: x,
+          y: y,
+          width: 320,
+          height: 28,
+          properties: properties ?? {
+            'startColor': const Color(0xFFFF8A65).value,
+            'endColor': const Color(0xFFF06292).value,
+            'thickness': 8.0,
+            'cornerRadius': 20.0,
+            'showShadow': true,
+            'shadowOpacity': 0.25,
+          },
+        );
+
+  @override
+  Widget buildWidget() {
+    final startColor = Color(properties['startColor'] ?? const Color(0xFFFF8A65).value);
+    final endColor = Color(properties['endColor'] ?? const Color(0xFFF06292).value);
+    final thickness = (properties['thickness'] ?? 8.0).toDouble().clamp(2.0, 36.0);
+    final cornerRadius = (properties['cornerRadius'] ?? 20.0).toDouble().clamp(0.0, 60.0);
+    final showShadow = properties['showShadow'] != false;
+    final shadowOpacity = (properties['shadowOpacity'] ?? 0.25).toDouble().clamp(0.0, 1.0);
+
+    final double containerHeight = thickness + 8;
+
+    return SizedBox(
+      width: width,
+      height: containerHeight,
+      child: Center(
+        child: Container(
+          width: width,
+          height: thickness,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [startColor, endColor],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(cornerRadius),
+            boxShadow: showShadow
+                ? [
+                    BoxShadow(
+                      color: endColor.withOpacity(shadowOpacity),
+                      blurRadius: cornerRadius,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget buildEditDialog(BuildContext context, Function(Map<String, dynamic>) onUpdate) {
+    Color startColor = Color(properties['startColor'] ?? const Color(0xFFFF8A65).value);
+    Color endColor = Color(properties['endColor'] ?? const Color(0xFFF06292).value);
+    double thickness = (properties['thickness'] ?? 8.0).toDouble();
+    double cornerRadius = (properties['cornerRadius'] ?? 20.0).toDouble();
+    bool showShadow = properties['showShadow'] != false;
+    double shadowOpacity = (properties['shadowOpacity'] ?? 0.25).toDouble();
+
+  thickness = thickness.clamp(2.0, 36.0).toDouble();
+  cornerRadius = cornerRadius.clamp(0.0, 60.0).toDouble();
+  shadowOpacity = shadowOpacity.clamp(0.0, 1.0).toDouble();
+
+    final gradientPresets = <List<Color>>[
+      [const Color(0xFFFF8A65), const Color(0xFFF06292)],
+      [const Color(0xFF7C4DFF), const Color(0xFF536DFE)],
+      [const Color(0xFF26C6DA), const Color(0xFF00ACC1)],
+      [const Color(0xFFFFD54F), const Color(0xFFFF8F00)],
+      [const Color(0xFFAB47BC), const Color(0xFF8E24AA)],
+      [const Color(0xFF29B6F6), const Color(0xFF0288D1)],
+    ];
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return AlertDialog(
+          title: const Text('Edit Gradient Divider'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Gradient Presets',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: gradientPresets.map((preset) {
+                    final isSelected = startColor.value == preset[0].value && endColor.value == preset[1].value;
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        startColor = preset[0];
+                        endColor = preset[1];
+                      }),
+                      child: Container(
+                        width: 64,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: preset,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF673AB7) : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('Thickness'),
+                    Expanded(
+                      child: Slider(
+                        value: thickness,
+                        min: 2,
+                        max: 36,
+                        divisions: 34,
+                        label: '${thickness.toStringAsFixed(0)} px',
+                        onChanged: (value) => setState(() => thickness = value),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('Corner radius'),
+                    Expanded(
+                      child: Slider(
+                        value: cornerRadius,
+                        min: 0,
+                        max: 60,
+                        divisions: 30,
+                        label: '${cornerRadius.toStringAsFixed(0)} px',
+                        onChanged: (value) => setState(() => cornerRadius = value),
+                      ),
+                    ),
+                  ],
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Glow shadow'),
+                  value: showShadow,
+                  onChanged: (value) => setState(() => showShadow = value),
+                ),
+                if (showShadow) Row(
+                  children: [
+                    const Text('Shadow strength'),
+                    Expanded(
+                      child: Slider(
+                        value: shadowOpacity,
+                        min: 0,
+                        max: 1,
+                        divisions: 10,
+                        label: shadowOpacity.toStringAsFixed(2),
+                        onChanged: (value) => setState(() => shadowOpacity = value),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                onUpdate({
+                  'startColor': startColor.value,
+                  'endColor': endColor.value,
+                  'thickness': thickness,
+                  'cornerRadius': cornerRadius,
+                  'showShadow': showShadow,
+                  'shadowOpacity': shadowOpacity,
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': 'gradientSeparator',
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
+      'properties': properties,
+    };
+  }
+
+  factory GradientSeparatorComponent.fromJson(Map<String, dynamic> json) {
+    return GradientSeparatorComponent(
       id: json['id'],
       x: json['x']?.toDouble() ?? 0,
       y: json['y']?.toDouble() ?? 0,

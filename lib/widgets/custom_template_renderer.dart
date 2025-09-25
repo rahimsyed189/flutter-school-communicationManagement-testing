@@ -628,18 +628,19 @@ class CustomAnnouncementRenderer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('CustomAnnouncementRenderer building with template data: $templateData');
-    
-    final components = (templateData['components'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-    final canvasWidth = (templateData['canvasWidth'] is int) 
-        ? (templateData['canvasWidth'] as int).toDouble()
-        : templateData['canvasWidth']?.toDouble() ?? 350.0;
-    final canvasHeight = (templateData['canvasHeight'] is int) 
-        ? (templateData['canvasHeight'] as int).toDouble()
-        : templateData['canvasHeight']?.toDouble() ?? 500.0;
-    final templateName = templateData['name'] ?? 'Custom Template';
-    
-    print('Rendering custom template with ${components.length} components, canvas: ${canvasWidth}x${canvasHeight}');
+  print('CustomAnnouncementRenderer building with template data: $templateData');
+
+  final rawComponents = (templateData['components'] as List<dynamic>?) ?? const [];
+  final components = rawComponents
+    .whereType<Map<String, dynamic>>()
+    .map((component) => _normalizeComponent(component))
+    .toList();
+  final double canvasWidth = _asDouble(templateData['canvasWidth'], 350.0);
+  final double canvasHeight = _asDouble(templateData['canvasHeight'], 500.0);
+  final templateName = templateData['name'] ?? templateData['templateName'] ?? 'Custom Template';
+  final canvasColor = Color(_tryColor(templateData['canvasBackgroundColor']) ?? Colors.white.value);
+
+  print('Rendering custom template with ${components.length} components, canvas: ${canvasWidth}x$canvasHeight');
     
     // Get announcement details
     final title = announcementData['title'] ?? templateName;
@@ -758,7 +759,7 @@ class CustomAnnouncementRenderer extends StatelessWidget {
                 width: canvasWidth,
                 height: canvasHeight,
                 decoration: BoxDecoration(
-                  color: Color(templateData['canvasBackgroundColor'] ?? Colors.white.value),
+                  color: canvasColor,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade200, width: 1),
                   boxShadow: [
@@ -772,123 +773,22 @@ class CustomAnnouncementRenderer extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Stack(
-                    children: components.map<Widget>((componentData) {
-                      try {
-                        // Extract component data (same logic as preview)
-                        final x = componentData['position']?['x']?.toDouble() ?? 0;
-                        final y = componentData['position']?['y']?.toDouble() ?? 0;
-                        final width = componentData['size']?['width']?.toDouble() ?? 120;
-                        final height = componentData['size']?['height']?.toDouble() ?? 40;
-                        final properties = componentData['properties'] ?? {};
-                        final type = CustomAnnouncementRenderer._extractComponentType(componentData['type']);
-                        
-                        Widget componentWidget;
-                        
-                        switch (type) {
-                          case 'textLabel':
-                            componentWidget = Container(
-                              width: width,
-                              height: height,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: Color(properties['backgroundColor'] ?? Colors.transparent.value),
-                                borderRadius: BorderRadius.circular(properties['borderRadius']?.toDouble() ?? 0),
-                                border: properties['showBorder'] == true 
-                                  ? Border.all(
-                                      color: Color(properties['borderColor'] ?? Colors.grey.value),
-                                      width: properties['borderWidth']?.toDouble() ?? 1,
-                                    )
-                                  : null,
-                              ),
-                              child: Text(
-                                properties['text'] ?? 'Text Label',
-                                style: TextStyle(
-                                  fontSize: properties['fontSize']?.toDouble() ?? 16,
-                                  fontWeight: properties['isBold'] == true ? FontWeight.bold : FontWeight.normal,
-                                  fontStyle: properties['isItalic'] == true ? FontStyle.italic : FontStyle.normal,
-                                  color: Color(properties['textColor'] ?? Colors.black.value),
+                    children: (components.isEmpty
+                            ? [
+                                Positioned.fill(
+                                  child: Center(
+                                    child: Text(
+                                      'Template has no components',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade500,
+                                        fontSize: 14,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
                                 ),
-                                textAlign: CustomAnnouncementRenderer._getTextAlignment(properties['textAlign'] ?? 'center'),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: properties['maxLines'] ?? 1,
-                              ),
-                            );
-                            break;
-                            
-                          case 'dateField':
-                            componentWidget = Container(
-                              width: width,
-                              height: height,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: Color(properties['backgroundColor'] ?? Colors.blue.shade50.value),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.blue.shade200, width: 1),
-                              ),
-                              child: Text(
-                                properties['selectedDate'] ?? 'Select Date',
-                                style: TextStyle(
-                                  fontSize: properties['fontSize']?.toDouble() ?? 14,
-                                  color: Color(properties['textColor'] ?? Colors.blue.shade800.value),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            );
-                            break;
-                            
-                          default:
-                            componentWidget = Container(
-                              width: width,
-                              height: height,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.grey),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  type.toUpperCase(),
-                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                ),
-                              ),
-                            );
-                        }
-                        
-                        return Positioned(
-                          left: x,
-                          top: y,
-                          child: componentWidget,
-                        );
-                      } catch (e) {
-                        // Fallback for any component that fails to render
-                        final x = componentData['position']?['x']?.toDouble() ?? 0;
-                        final y = componentData['position']?['y']?.toDouble() ?? 0;
-                        final width = componentData['size']?['width']?.toDouble() ?? 50;
-                        final height = componentData['size']?['height']?.toDouble() ?? 50;
-                        
-                        return Positioned(
-                          left: x,
-                          top: y,
-                          child: Container(
-                            width: width,
-                            height: height,
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
-                              border: Border.all(color: Colors.red.withOpacity(0.3)),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.error_outline,
-                                color: Colors.red,
-                                size: 16,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                    }).toList(),
+                              ]
+                            : components.map(_buildComponentWidget).toList()),
                   ),
                 ),
               ),
@@ -955,5 +855,243 @@ class CustomAnnouncementRenderer extends StatelessWidget {
         );
       }).toList(),
     );
+  }
+
+  static Widget _buildComponentWidget(Map<String, dynamic> componentData) {
+    try {
+      final componentJson = {
+        'id': componentData['id'],
+        'type': componentData['type'],
+        'x': componentData['x'],
+        'y': componentData['y'],
+        'properties': componentData['properties'],
+      };
+
+      final component = DraggableComponent.fromJson(componentJson);
+      component.x = componentData['x'];
+      component.y = componentData['y'];
+      component.width = componentData['width'];
+      component.height = componentData['height'];
+
+      return Positioned(
+        left: component.x,
+        top: component.y,
+        child: SizedBox(
+          width: component.width,
+          height: component.height,
+          child: component.buildWidget(),
+        ),
+      );
+    } catch (e) {
+      print('Custom template component error (${componentData['type']}): $e');
+      return Positioned(
+        left: componentData['x'],
+        top: componentData['y'],
+        child: Container(
+          width: componentData['width'],
+          height: componentData['height'],
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.error_outline,
+              color: Colors.red,
+              size: 16,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  static Map<String, dynamic> _normalizeComponent(Map<String, dynamic> component) {
+    final position = component['position'];
+    final size = component['size'];
+    final type = _extractComponentType(component['type']?.toString() ?? '');
+    final properties = component['properties'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(component['properties'] as Map<String, dynamic>)
+        : <String, dynamic>{};
+
+    return {
+      'id': component['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      'type': type,
+      'x': _asDouble(position is Map ? position['x'] : component['x'], 0),
+      'y': _asDouble(position is Map ? position['y'] : component['y'], 0),
+      'width': _asDouble(size is Map ? size['width'] : component['width'], _defaultWidthForType(type)),
+      'height': _asDouble(size is Map ? size['height'] : component['height'], _defaultHeightForType(type)),
+      'properties': _normalizeProperties(type, properties),
+    };
+  }
+
+  static Map<String, dynamic> _normalizeProperties(String type, Map<String, dynamic> properties) {
+    const doubleKeys = {
+      'fontSize',
+      'borderRadius',
+      'borderWidth',
+      'iconSize',
+      'padding',
+      'lineHeight',
+      'letterSpacing',
+      'shadowBlur',
+      'shadowSpread',
+      'shadowOffsetX',
+      'shadowOffsetY',
+      'strokeWidth',
+    };
+
+    for (final key in doubleKeys) {
+      if (properties.containsKey(key)) {
+        final normalized = _tryDouble(properties[key]);
+        if (normalized != null) {
+          properties[key] = normalized;
+        }
+      }
+    }
+
+    const intKeys = {'maxLines', 'minLines'};
+    for (final key in intKeys) {
+      if (properties.containsKey(key)) {
+        final normalized = _tryInt(properties[key]);
+        if (normalized != null) {
+          properties[key] = normalized;
+        }
+      }
+    }
+
+    const boolKeys = {'isBold', 'isItalic', 'showBorder', 'useGradient', 'useShadow'};
+    for (final key in boolKeys) {
+      if (properties.containsKey(key)) {
+        final normalized = _tryBool(properties[key]);
+        if (normalized != null) {
+          properties[key] = normalized;
+        }
+      }
+    }
+
+    const colorKeys = {
+      'backgroundColor',
+      'textColor',
+      'borderColor',
+      'secondaryTextColor',
+      'primaryColor',
+      'shadowColor',
+      'woodColor1',
+      'woodColor2',
+      'innerBackgroundColor',
+      'iconColor',
+      'accentColor',
+    };
+    for (final key in colorKeys) {
+      if (properties.containsKey(key)) {
+        final normalized = _tryColor(properties[key]);
+        if (normalized != null) {
+          properties[key] = normalized;
+        }
+      }
+    }
+
+    return properties;
+  }
+
+  static double _defaultWidthForType(String type) {
+    switch (type) {
+      case 'textLabel':
+        return 150.0;
+      case 'textBox':
+        return 220.0;
+      case 'imageContainer':
+        return 200.0;
+      case 'iconContainer':
+        return 60.0;
+      case 'dateContainer':
+        return 180.0;
+      case 'calendar':
+        return 140.0;
+      case 'coloredContainer':
+      case 'woodenContainer':
+        return 220.0;
+      default:
+        return 160.0;
+    }
+  }
+
+  static double _defaultHeightForType(String type) {
+    switch (type) {
+      case 'textLabel':
+        return 40.0;
+      case 'textBox':
+        return 120.0;
+      case 'imageContainer':
+        return 150.0;
+      case 'iconContainer':
+        return 60.0;
+      case 'dateContainer':
+        return 110.0;
+      case 'calendar':
+        return 140.0;
+      case 'coloredContainer':
+      case 'woodenContainer':
+        return 140.0;
+      default:
+        return 100.0;
+    }
+  }
+
+  static double _asDouble(dynamic value, double fallback) => _tryDouble(value) ?? fallback;
+
+  static double? _tryDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  static int? _tryInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static bool? _tryBool(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final lowered = value.toLowerCase();
+      if (lowered == 'true') return true;
+      if (lowered == 'false') return false;
+    }
+    return null;
+  }
+
+  static int? _tryColor(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is Color) return value.value;
+    if (value is String) {
+      final cleaned = value.trim();
+      if (cleaned.startsWith('0x')) {
+        return int.tryParse(cleaned.substring(2), radix: 16);
+      }
+      if (cleaned.startsWith('#')) {
+        final hex = cleaned.substring(1);
+        final parsed = int.tryParse(hex, radix: 16);
+        if (parsed != null) {
+          // If only RGB provided, assume fully opaque
+          if (hex.length <= 6) {
+            return 0xFF000000 | parsed;
+          }
+          return parsed;
+        }
+      }
+      return int.tryParse(cleaned);
+    }
+    return null;
   }
 }

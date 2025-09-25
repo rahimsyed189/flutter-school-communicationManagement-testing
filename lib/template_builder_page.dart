@@ -34,32 +34,47 @@ class TemplateBuilderPage extends StatefulWidget {
 class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   // Canvas properties
   double canvasWidth = 400;
-  double canvasHeight = 600;
+  double canvasHeight = 360;
   Color canvasBackgroundColor = Colors.white;
+  final GlobalKey _canvasKey = GlobalKey();
   
   // Template properties
   final TextEditingController _templateNameController = TextEditingController();
   List<BuilderComponent> _canvasComponents = [];
   String? _selectedComponentId;
   bool _isLoading = false;
+  bool _isDraggingComponent = false;
+  bool _isResizingComponent = false;
+  String? _editingComponentId;
+  TextEditingController? _inlineEditorController;
+  final FocusNode _inlineEditorFocusNode = FocusNode();
   
   // Auto-alignment
   bool _autoAlignEnabled = true;
   
   // Dynamic canvas sizing
   static const double minCanvasWidth = 400;
-  static const double minCanvasHeight = 600;
+  static const double minCanvasHeight = 320;
   static const double canvasPadding = 50; // Extra space around components
+  static const double _componentHorizontalPadding = 24.0;
+  static const double _componentMinContentWidth = 120.0;
+  static const double _componentVerticalSpacing = 16.0;
 
   @override
   void initState() {
     super.initState();
     _templateNameController.text = 'My Custom Template';
+    _inlineEditorFocusNode.addListener(_handleInlineEditorFocusChange);
+    _initializeDefaultCanvasState();
   }
 
   @override
   void dispose() {
     _templateNameController.dispose();
+    _inlineEditorController?.dispose();
+    _inlineEditorFocusNode
+      ..removeListener(_handleInlineEditorFocusChange)
+      ..dispose();
     super.dispose();
   }
 
@@ -175,16 +190,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                     child: Scrollbar(
                       thumbVisibility: true,
                       child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: Scrollbar(
-                          thumbVisibility: true,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: _buildCanvas(),
-                            ),
-                          ),
+            physics: (_isDraggingComponent || _isResizingComponent)
+                            ? const NeverScrollableScrollPhysics()
+                            : const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: _buildCanvas(),
                         ),
                       ),
                     ),
@@ -257,16 +269,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                           child: Scrollbar(
                             thumbVisibility: true,
                             child: SingleChildScrollView(
-                              scrollDirection: Axis.vertical,
-                              child: Scrollbar(
-                                thumbVisibility: true,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: _buildCanvas(),
-                                  ),
-                                ),
+                physics: (_isDraggingComponent || _isResizingComponent)
+                                  ? const NeverScrollableScrollPhysics()
+                                  : const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: _buildCanvas(),
                               ),
                             ),
                           ),
@@ -633,70 +642,125 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Widget _buildCanvas() {
-    return Container(
-      width: canvasWidth,
-      height: canvasHeight,
-      decoration: BoxDecoration(
-        color: canvasBackgroundColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minAllowedWidth =
+            (_componentHorizontalPadding * 2) + _componentMinContentWidth;
+        final double availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : minCanvasWidth;
+        final double targetWidth = math.max(availableWidth, minAllowedWidth);
+
+        if ((canvasWidth - targetWidth).abs() > 0.5) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() {
+              canvasWidth = targetWidth;
+              _alignComponentsToCanvasWidth();
+            });
+            _updateCanvasSize();
+          });
+        }
+
+        return Container(
+          key: _canvasKey,
+          width: targetWidth,
+          height: canvasHeight,
+          decoration: BoxDecoration(
+            color: canvasBackgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: DragTarget<ComponentType>(
-          onAcceptWithDetails: (details) {
-            _addComponentToCanvas(details.data, details.offset);
-          },
-          builder: (context, candidateData, rejectedData) {
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Canvas Background
-                Positioned.fill(
-                  child: Container(color: canvasBackgroundColor),
-                ),
-                
-                // Components
-                ..._canvasComponents.map((component) => _buildCanvasComponent(component)).toList(),
-              ],
-            );
-          },
-        ),
-      ),
+          child: DragTarget<ComponentType>(
+            onAcceptWithDetails: (details) {
+              _addComponentToCanvas(details.data, details.offset);
+            },
+            builder: (context, candidateData, rejectedData) {
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        _stopInlineEditing(save: true);
+                        setState(() {
+                          _selectedComponentId = null;
+                        });
+                      },
+                      child: Container(color: canvasBackgroundColor),
+                    ),
+                  ),
+                  ..._canvasComponents.map((component) => _buildCanvasComponent(component)).toList(),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
   Widget _buildCanvasComponent(BuilderComponent component) {
     final isSelected = _selectedComponentId == component.id;
+    final isEditing = _editingComponentId == component.id;
     
     return Positioned(
       left: component.x,
       top: component.y,
       child: GestureDetector(
-        onPanUpdate: (details) {
-          setState(() {
-            // Allow components to be dragged beyond current canvas bounds
-            component.x = (component.x + details.delta.dx).clamp(0.0, double.infinity);
-            component.y = (component.y + details.delta.dy).clamp(0.0, double.infinity);
-          });
-          _updateCanvasSize(); // Expand canvas if needed
-        },
-        onPanEnd: (_) {
-          if (_autoAlignEnabled) {
-            _performAutoAlignment();
-          }
-        },
+        onPanStart: isEditing
+            ? null
+            : (_) {
+                setState(() {
+                  _isDraggingComponent = true;
+                });
+              },
+        onPanUpdate: isEditing
+            ? null
+            : (details) {
+                setState(() {
+                  _applyFullWidthLayout(component, recomputeHeight: false);
+                  component.y = (component.y + details.delta.dy).clamp(0.0, double.infinity);
+                });
+                _updateCanvasSize(); // Expand canvas if needed
+              },
+        onPanEnd: isEditing
+            ? null
+            : (_) {
+                setState(() {
+                  _isDraggingComponent = false;
+                });
+                if (_autoAlignEnabled) {
+                  _performAutoAlignment();
+                }
+              },
+        onPanCancel: isEditing
+            ? null
+            : () {
+                setState(() {
+                  _isDraggingComponent = false;
+                });
+              },
         onTap: () {
           setState(() {
             _selectedComponentId = isSelected ? null : component.id;
           });
+          if (!isEditing) {
+            _stopInlineEditing(save: true);
+          }
+        },
+        onDoubleTap: () {
+          if (_canInlineEdit(component)) {
+            _startInlineTextEditing(component);
+          }
         },
         child: Container(
           width: component.width,
@@ -706,16 +770,24 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
               // Component Content
-              _buildComponentContent(component),
+              _buildComponentContent(component, isEditing: isEditing),
               
               // Selection Controls
-              if (isSelected) ...[
+              if (isSelected && !isEditing) ...[
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Transform.translate(
+                    offset: const Offset(0, -44),
+                    child: _buildPropertiesButton(component),
+                  ),
+                ),
                 // Edit Button
                 Positioned(
-                  top: -8,
-                  right: -8,
+                  top: -18,
+                  right: -18,
                   child: Container(
                     width: 28,
                     height: 28,
@@ -740,8 +812,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 
                 // Delete Button
                 Positioned(
-                  top: -8,
-                  left: -8,
+                  top: -18,
+                  left: -18,
                   child: Container(
                     width: 28,
                     height: 28,
@@ -766,16 +838,58 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 
                 // Resize Handle
                 Positioned(
-                  bottom: -8,
-                  right: -8,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF673AB7),
-                      borderRadius: BorderRadius.circular(10),
+                  bottom: -18,
+                  left: math.max(0.0, (component.width / 2) - 18),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onPanStart: (_) {
+                      setState(() {
+                        _isResizingComponent = true;
+                        if (_canInlineEdit(component)) {
+                          component.properties['autoHeight'] = false;
+                        }
+                      });
+                    },
+                    onPanUpdate: (details) {
+                      setState(() {
+                        final minHeight = _minimumComponentHeight(component);
+                        final proposed = component.height + details.delta.dy;
+                        component.height = math.max(minHeight, proposed);
+                        if (_canInlineEdit(component)) {
+                          component.properties['autoHeight'] = false;
+                        }
+                      });
+                      _updateCanvasSize();
+                    },
+                    onPanEnd: (_) {
+                      setState(() {
+                        _isResizingComponent = false;
+                      });
+                      if (_autoAlignEnabled) {
+                        _performAutoAlignment();
+                      }
+                    },
+                    onPanCancel: () {
+                      setState(() {
+                        _isResizingComponent = false;
+                      });
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF673AB7),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.drag_handle, color: Colors.white, size: 16),
                     ),
-                    child: const Icon(Icons.drag_indicator, color: Colors.white, size: 12),
                   ),
                 ),
               ],
@@ -786,37 +900,19 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     );
   }
 
-  Widget _buildComponentContent(BuilderComponent component) {
+  Widget _buildComponentContent(BuilderComponent component, {bool isEditing = false}) {
     switch (component.type) {
       case ComponentType.textLabel:
-        return Container(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            component.properties['text'] ?? 'Text Label',
-            style: TextStyle(
-              fontSize: (component.properties['fontSize'] ?? 14).toDouble(),
-              fontWeight: component.properties['isBold'] == true ? FontWeight.bold : FontWeight.normal,
-              color: Color(component.properties['color'] ?? 0xFF000000),
-            ),
-          ),
-        );
+        if (isEditing) {
+          return _buildInlineTextEditorField(component);
+        }
+        return _buildStyledTextComponent(component, isTextBox: false);
       
       case ComponentType.textBox:
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Text(
-            component.properties['text'] ?? 'Text Box Content',
-            style: TextStyle(
-              fontSize: (component.properties['fontSize'] ?? 12).toDouble(),
-              color: Color(component.properties['color'] ?? 0xFF000000),
-            ),
-          ),
-        );
+        if (isEditing) {
+          return _buildInlineTextEditorField(component);
+        }
+        return _buildStyledTextComponent(component, isTextBox: true);
       
       case ComponentType.dateContainer:
         final date = component.properties['selectedDate'] is int 
@@ -852,76 +948,1216 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
   }
 
-  void _addComponentToCanvas(ComponentType type, Offset globalOffset) {
-    // Convert global offset to canvas-relative offset
-    final RenderBox? canvasBox = context.findRenderObject() as RenderBox?;
-    if (canvasBox == null) return;
-    
-    final localOffset = canvasBox.globalToLocal(globalOffset);
-    
-    // Adjust for canvas position within the widget
-    final canvasOffset = Offset(
-      (localOffset.dx - 300).clamp(0.0, canvasWidth - 100), // 300 is approximate left panel width
-      (localOffset.dy - 100).clamp(0.0, canvasHeight - 50), // 100 is approximate top offset
+  bool _canInlineEdit(BuilderComponent component) {
+    return component.type == ComponentType.textLabel || component.type == ComponentType.textBox;
+  }
+
+  double _defaultFontSizeFor(BuilderComponent component) {
+    switch (component.type) {
+      case ComponentType.textLabel:
+        return 14.0;
+      case ComponentType.textBox:
+        return 12.0;
+      default:
+        return 14.0;
+    }
+  }
+
+  double _availableComponentWidth() {
+    return math.max(
+      _componentMinContentWidth,
+      canvasWidth - (_componentHorizontalPadding * 2),
     );
-    
-    final component = BuilderComponent(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: type,
-      x: canvasOffset.dx,
-      y: canvasOffset.dy,
-      width: 120,
-      height: 40,
-      properties: _getDefaultProperties(type),
+  }
+
+  void _alignComponentsToCanvasWidth() {
+    for (final component in _canvasComponents) {
+      _applyFullWidthLayout(component);
+    }
+  }
+
+  void _initializeDefaultCanvasState() {
+    if (_canvasComponents.isNotEmpty) return;
+
+    final defaultProperties = Map<String, dynamic>.from(
+      _getDefaultProperties(ComponentType.textBox),
     );
-    
+    defaultProperties['text'] = 'Double tap to edit text';
+
+    final placeholder = BuilderComponent(
+      id: 'component_${DateTime.now().millisecondsSinceEpoch}_default',
+      type: ComponentType.textBox,
+      x: _componentHorizontalPadding,
+      y: canvasPadding * 0.45,
+      width: _availableComponentWidth(),
+      height: 72,
+      properties: defaultProperties,
+    );
+
+    _applyFullWidthLayout(placeholder);
+    _canvasComponents = [placeholder];
+
+    final double requiredHeight =
+        placeholder.y + placeholder.height + canvasPadding;
+    canvasHeight = math.max(minCanvasHeight, requiredHeight);
+  }
+
+  void _handleInlineEditorFocusChange() {
+    if (_editingComponentId != null && !_inlineEditorFocusNode.hasFocus) {
+      _stopInlineEditing(save: true);
+    }
+  }
+
+  void _applyFullWidthLayout(BuilderComponent component, {bool recomputeHeight = true}) {
+    component.x = _componentHorizontalPadding;
+    component.width = _availableComponentWidth();
+    if (recomputeHeight && _canInlineEdit(component)) {
+      final measuredHeight = _calculateTextComponentHeight(
+        component,
+        component.properties['text']?.toString() ?? '',
+      );
+      component.properties['minTextHeight'] = measuredHeight;
+      final bool autoHeight = component.properties['autoHeight'] != false;
+      if (autoHeight) {
+        component.height = measuredHeight;
+      } else {
+        component.height = math.max(component.height, measuredHeight);
+      }
+    }
+  }
+
+  double _findNextAvailableY(double componentHeight) {
+    if (_canvasComponents.isEmpty) {
+      return canvasPadding * 0.5;
+    }
+
+    double maxBottom = 0;
+    for (final component in _canvasComponents) {
+      final bottom = component.y + component.height;
+      if (bottom > maxBottom) {
+        maxBottom = bottom;
+      }
+    }
+
+    return maxBottom + _componentVerticalSpacing;
+  }
+
+  TextStyle _resolveTextStyle(BuilderComponent component) {
+    final fontSizeValue = component.properties['fontSize'];
+    final double fontSize = fontSizeValue is num
+        ? fontSizeValue.toDouble()
+        : _defaultFontSizeFor(component);
+    final fontWeight = component.properties['isBold'] == true
+        ? FontWeight.bold
+        : FontWeight.normal;
+  final colorValue = component.properties['color'] ??
+    component.properties['textColor'] ??
+    0xFF000000;
+  final fontFamily = component.properties['fontFamily'] is String
+    ? component.properties['fontFamily'] as String
+    : null;
+  final isItalic = component.properties['isItalic'] == true;
+  final isUnderline = component.properties['isUnderline'] == true;
+  final letterSpacingValue = component.properties['letterSpacing'];
+  final double? letterSpacing = letterSpacingValue is num
+    ? letterSpacingValue.toDouble()
+    : null;
+  final lineHeightValue = component.properties['lineHeight'];
+  final double height = lineHeightValue is num
+    ? lineHeightValue.toDouble().clamp(1.0, 3.0)
+    : 1.25;
+
+    return TextStyle(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: Color(colorValue),
+    fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
+    letterSpacing: letterSpacing,
+    height: height,
+    fontFamily: fontFamily,
+    decoration: isUnderline ? TextDecoration.underline : TextDecoration.none,
+    );
+  }
+
+  double _calculateTextComponentHeight(BuilderComponent component, String text) {
+    final textToMeasure = text.isEmpty ? ' ' : text;
+    final textPainter = TextPainter(
+      text: TextSpan(text: textToMeasure, style: _resolveTextStyle(component)),
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    );
+
+    final paddingValue = component.properties['padding'];
+    final double padding = paddingValue is num ? paddingValue.toDouble() : 8.0;
+    final double horizontalPadding = padding * 2;
+    final double availableWidth = math.max(component.width - horizontalPadding, 80);
+    textPainter.layout(maxWidth: availableWidth);
+    final double verticalPadding = padding * 2;
+    return math.max(textPainter.size.height + verticalPadding, 36);
+  }
+
+  TextAlign _resolveTextAlign(BuilderComponent component) {
+    final alignment = component.properties['textAlign'];
+    switch (alignment) {
+      case 'left':
+        return TextAlign.left;
+      case 'right':
+        return TextAlign.right;
+      case 'justify':
+        return TextAlign.justify;
+      case 'center':
+      default:
+        return TextAlign.center;
+    }
+  }
+
+  double _minimumComponentHeight(BuilderComponent component) {
+    switch (component.type) {
+      case ComponentType.textLabel:
+      case ComponentType.textBox:
+        final textValue = component.properties['text']?.toString() ?? '';
+        final measured = _calculateTextComponentHeight(component, textValue);
+        return math.max(40.0, measured);
+      case ComponentType.dateContainer:
+        return 56.0;
+      case ComponentType.imageContainer:
+        return 80.0;
+      case ComponentType.iconContainer:
+        return 48.0;
+      case ComponentType.woodenContainer:
+      case ComponentType.coloredContainer:
+        return 80.0;
+      case ComponentType.calendar:
+        return 120.0;
+      default:
+        return 48.0;
+    }
+  }
+
+  void _startInlineTextEditing(BuilderComponent component) {
+    if (!_canInlineEdit(component)) return;
+    if (_editingComponentId == component.id) return;
+
+    if (_editingComponentId != null) {
+      _stopInlineEditing(save: true);
+    }
+
+    final initialText = component.properties['text']?.toString() ?? '';
+    _inlineEditorController ??= TextEditingController();
+    _inlineEditorController!
+      ..text = initialText
+      ..selection = TextSelection.collapsed(offset: initialText.length);
+
     setState(() {
-      _canvasComponents.add(component);
+      _editingComponentId = component.id;
+      _selectedComponentId = component.id;
+      _applyFullWidthLayout(component);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_inlineEditorController != null) {
+        _inlineEditorFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _stopInlineEditing({bool save = true}) {
+    if (_editingComponentId == null) return;
+
+    final editingId = _editingComponentId!;
+    BuilderComponent? target;
+    for (final component in _canvasComponents) {
+      if (component.id == editingId) {
+        target = component;
+        break;
+      }
+    }
+
+    final updatedText = _inlineEditorController?.text ??
+        target?.properties['text']?.toString() ??
+        '';
+
+    setState(() {
+      if (save && target != null) {
+        target!.properties['text'] = updatedText;
+        _applyFullWidthLayout(target!);
+      }
+      _editingComponentId = null;
+    });
+
+    _updateCanvasSize();
+  }
+
+  Widget _buildInlineTextEditorField(BuilderComponent component) {
+    _inlineEditorController ??=
+        TextEditingController(text: component.properties['text']?.toString() ?? '');
+
+    final isTextBox = component.type == ComponentType.textBox;
+
+    final editor = TextField(
+      controller: _inlineEditorController,
+      focusNode: _inlineEditorFocusNode,
+      style: _resolveTextStyle(component),
+      decoration: const InputDecoration(
+        border: InputBorder.none,
+        isCollapsed: true,
+        contentPadding: EdgeInsets.zero,
+      ),
+      keyboardType: TextInputType.multiline,
+      textAlign: _resolveTextAlign(component),
+      maxLines: null,
+      autofocus: true,
+      cursorColor: const Color(0xFF673AB7),
+      onChanged: (value) {
+        setState(() {
+          component.properties['text'] = value;
+          final measuredHeight = _calculateTextComponentHeight(component, value);
+          component.properties['minTextHeight'] = measuredHeight;
+          final bool autoHeight = component.properties['autoHeight'] != false;
+          if (autoHeight) {
+            component.height = measuredHeight;
+          } else {
+            component.height = math.max(component.height, measuredHeight);
+          }
+        });
+        _updateCanvasSize();
+      },
+      onSubmitted: (_) => _stopInlineEditing(save: true),
+    );
+
+    final paddingValue = component.properties['padding'];
+    final double padding = paddingValue is num
+        ? paddingValue.toDouble()
+        : (isTextBox ? 12.0 : 8.0);
+
+    final backgroundValue = component.properties['backgroundColor'];
+    Color? backgroundColor;
+    if (backgroundValue is int) {
+      backgroundColor = Color(backgroundValue);
+    } else if (isTextBox) {
+      backgroundColor = const Color(0xFFF7F7F7);
+    }
+
+    final borderRadiusValue = component.properties['borderRadius'];
+    final double borderRadius = borderRadiusValue is num
+        ? borderRadiusValue.toDouble()
+        : (isTextBox ? 12.0 : 8.0);
+
+    final borderWidthValue = component.properties['borderWidth'];
+    double borderWidth = borderWidthValue is num
+        ? borderWidthValue.toDouble()
+        : (isTextBox ? 1.0 : 0.0);
+
+    final borderColorValue = component.properties['borderColor'];
+    final Color borderColor = Color(borderColorValue is int
+        ? borderColorValue
+        : (isTextBox ? 0xFFE0E0E0 : 0xFFDDDDDD));
+
+    final bool showBorder = component.properties['showBorder'] == true;
+    if (!showBorder) {
+      borderWidth = 0.0;
+    } else if (borderWidth <= 0) {
+      borderWidth = 1.0;
+    }
+
+    final decoration = (backgroundColor != null || borderWidth > 0)
+        ? BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: borderWidth > 0
+                ? Border.all(color: borderColor, width: borderWidth)
+                : null,
+          )
+        : null;
+
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: decoration,
+      child: editor,
+    );
+  }
+
+  Widget _buildStyledTextComponent(BuilderComponent component, {required bool isTextBox}) {
+    final String textValue = component.properties['text']?.toString() ??
+        (isTextBox ? 'Text Box Content' : 'Text Label');
+    final paddingValue = component.properties['padding'];
+    final double padding = paddingValue is num
+        ? paddingValue.toDouble()
+        : (isTextBox ? 12.0 : 8.0);
+
+    final backgroundValue = component.properties['backgroundColor'];
+    Color? backgroundColor;
+    if (backgroundValue is int) {
+      backgroundColor = Color(backgroundValue);
+    } else if (isTextBox) {
+      backgroundColor = const Color(0xFFF7F7F7);
+    }
+
+    final borderRadiusValue = component.properties['borderRadius'];
+    final double borderRadius = borderRadiusValue is num
+        ? borderRadiusValue.toDouble()
+        : (isTextBox ? 12.0 : 8.0);
+
+    final borderWidthValue = component.properties['borderWidth'];
+    double borderWidth = borderWidthValue is num
+        ? borderWidthValue.toDouble()
+        : (isTextBox ? 1.0 : 0.0);
+
+    final borderColorValue = component.properties['borderColor'];
+    final Color borderColor = Color(borderColorValue is int
+        ? borderColorValue
+        : (isTextBox ? 0xFFE0E0E0 : 0xFFDDDDDD));
+
+    final bool showBorder = component.properties['showBorder'] == true;
+    if (!showBorder) {
+      borderWidth = 0.0;
+    } else if (borderWidth <= 0) {
+      borderWidth = 1.0;
+    }
+
+    final int? maxLinesValue = component.properties['maxLines'] is int
+        ? component.properties['maxLines'] as int
+        : null;
+
+    final decoration = (backgroundColor != null || borderWidth > 0)
+        ? BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: borderWidth > 0
+                ? Border.all(color: borderColor, width: borderWidth)
+                : null,
+          )
+        : null;
+
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: decoration,
+      child: Text(
+        textValue,
+        style: _resolveTextStyle(component),
+        softWrap: true,
+        textAlign: _resolveTextAlign(component),
+        maxLines: maxLinesValue,
+        overflow: maxLinesValue != null ? TextOverflow.ellipsis : TextOverflow.visible,
+      ),
+    );
+  }
+
+  Widget _buildPropertiesButton(BuilderComponent component) {
+    return PopupMenuButton<String>(
+      tooltip: 'Component Properties',
+      elevation: 6,
+      offset: const Offset(0, 6),
+      constraints: const BoxConstraints(minWidth: 200),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (value) => _handlePropertySelection(component, value),
+      itemBuilder: (context) => _propertyMenuItemsForComponent(component),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF673AB7),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.25),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.tune, size: 16, color: Colors.white),
+            SizedBox(width: 6),
+            Text(
+              'Properties',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down, size: 16, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<PopupMenuEntry<String>> _propertyMenuItemsForComponent(BuilderComponent component) {
+    final items = <PopupMenuEntry<String>>[];
+
+    if (_canInlineEdit(component)) {
+      final bool autoHeightEnabled = component.properties['autoHeight'] != false;
+      items.add(
+        PopupMenuItem<String>(
+          value: 'edit_text',
+          child: Row(
+            children: const [
+              Icon(Icons.text_fields, size: 18),
+              SizedBox(width: 8),
+              Text('Edit text inline'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'font_increase',
+          child: Row(
+            children: const [
+              Icon(Icons.add, size: 18),
+              SizedBox(width: 8),
+              Text('Increase font size'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'font_decrease',
+          child: Row(
+            children: const [
+              Icon(Icons.remove, size: 18),
+              SizedBox(width: 8),
+              Text('Decrease font size'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'toggle_bold',
+          child: Row(
+            children: const [
+              Icon(Icons.format_bold, size: 18),
+              SizedBox(width: 8),
+              Text('Toggle bold'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'text_color',
+          child: Row(
+            children: [
+              Icon(
+                Icons.color_lens,
+                size: 18,
+                color: Color(
+                  component.properties['color'] is int
+                      ? component.properties['color'] as int
+                      : component.properties['textColor'] is int
+                          ? component.properties['textColor'] as int
+                          : 0xFF000000,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Change text color'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'text_style',
+          child: Row(
+            children: const [
+              Icon(Icons.format_size, size: 18),
+              SizedBox(width: 8),
+              Text('Typography & effects'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'text_align',
+          child: Row(
+            children: const [
+              Icon(Icons.format_align_left, size: 18),
+              SizedBox(width: 8),
+              Text('Text alignment'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'background_style',
+          child: Row(
+            children: const [
+              Icon(Icons.layers, size: 18),
+              SizedBox(width: 8),
+              Text('Background & border'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'toggle_auto_height',
+          child: Row(
+            children: [
+              Icon(autoHeightEnabled ? Icons.height : Icons.unfold_more, size: 18),
+              const SizedBox(width: 8),
+              Text(autoHeightEnabled ? 'Lock height' : 'Auto-fit height'),
+            ],
+          ),
+        ),
+      );
+      items.add(
+        PopupMenuItem<String>(
+          value: 'reset_height',
+          child: Row(
+            children: const [
+              Icon(Icons.refresh, size: 18),
+              SizedBox(width: 8),
+              Text('Reset height to fit'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (component.type == ComponentType.dateContainer) {
+      if (items.isNotEmpty) {
+        items.add(const PopupMenuDivider());
+      }
+      items.add(
+        PopupMenuItem<String>(
+          value: 'change_date',
+          child: Row(
+            children: const [
+              Icon(Icons.calendar_today, size: 18),
+              SizedBox(width: 8),
+              Text('Change date'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      items.add(
+        const PopupMenuItem<String>(
+          enabled: false,
+          child: Text('No configurable properties yet'),
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  void _handlePropertySelection(BuilderComponent component, String action) {
+    if (action != 'edit_text') {
+      _stopInlineEditing(save: true);
+    }
+
+    switch (action) {
+      case 'edit_text':
+        _startInlineTextEditing(component);
+        break;
+      case 'font_increase':
+        setState(() {
+          final fontSizeValue = component.properties['fontSize'];
+          final currentSize = fontSizeValue is num
+              ? fontSizeValue.toDouble()
+              : _defaultFontSizeFor(component);
+          final newSize = math.min(currentSize + 2, 72);
+          component.properties['fontSize'] = newSize;
+          _applyFullWidthLayout(component);
+        });
+        _updateCanvasSize();
+        break;
+      case 'font_decrease':
+        setState(() {
+          final fontSizeValue = component.properties['fontSize'];
+          final currentSize = fontSizeValue is num
+              ? fontSizeValue.toDouble()
+              : _defaultFontSizeFor(component);
+          final newSize = math.max(currentSize - 2, 8);
+          component.properties['fontSize'] = newSize;
+          _applyFullWidthLayout(component);
+        });
+        _updateCanvasSize();
+        break;
+      case 'toggle_bold':
+        setState(() {
+          final isBold = component.properties['isBold'] == true;
+          component.properties['isBold'] = !isBold;
+          _applyFullWidthLayout(component);
+        });
+        _updateCanvasSize();
+        break;
+      case 'text_color':
+        _showTextColorPicker(component);
+        break;
+      case 'text_style':
+        _showTextStyleEditor(component);
+        break;
+      case 'text_align':
+        _showTextAlignmentPicker(component);
+        break;
+      case 'background_style':
+        _showBackgroundStyleEditor(component);
+        break;
+      case 'toggle_auto_height':
+        setState(() {
+          final bool currentlyAuto = component.properties['autoHeight'] != false;
+          final bool nextAuto = !currentlyAuto;
+          component.properties['autoHeight'] = nextAuto;
+          final textValue = component.properties['text']?.toString() ?? '';
+          final measuredHeight = _calculateTextComponentHeight(component, textValue);
+          component.properties['minTextHeight'] = measuredHeight;
+          if (nextAuto) {
+            component.height = measuredHeight;
+          } else {
+            component.height = math.max(component.height, measuredHeight);
+          }
+        });
+        _updateCanvasSize();
+        break;
+      case 'reset_height':
+        setState(() {
+          final textValue = component.properties['text']?.toString() ?? '';
+          final measuredHeight = _calculateTextComponentHeight(component, textValue);
+          component.properties['autoHeight'] = true;
+          component.properties['minTextHeight'] = measuredHeight;
+          component.height = measuredHeight;
+        });
+        _updateCanvasSize();
+        break;
+      case 'change_date':
+        _showInlineDatePicker(component);
+        break;
+    }
+  }
+
+  Future<void> _showTextColorPicker(BuilderComponent component) async {
+    const colorOptions = <int>[
+      0xFF000000,
+      0xFF1F2933,
+      0xFF4B5563,
+      0xFF6B7280,
+      0xFF9CA3AF,
+      0xFFFFFFFF,
+      0xFFEF4444,
+      0xFFF59E0B,
+      0xFF10B981,
+      0xFF3B82F6,
+      0xFF8B5CF6,
+      0xFFEC4899,
+    ];
+
+    final selectedColor = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pick text color'),
+        content: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: colorOptions.map((colorValue) {
+            final isSelected = component.properties['color'] == colorValue;
+            return GestureDetector(
+              onTap: () => Navigator.pop(context, colorValue),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Color(colorValue),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                    width: isSelected ? 3 : 1,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || selectedColor == null) {
+      return;
+    }
+
+    setState(() {
+      component.properties['color'] = selectedColor;
+      component.properties['textColor'] = selectedColor;
+      _applyFullWidthLayout(component);
     });
     _updateCanvasSize();
   }
 
-  void _addComponentToCanvasMobile(ComponentType type) {
-    // Find an available position to avoid overlapping
-    final componentWidth = 120.0;
-    final componentHeight = 40.0;
-    final spacing = 15.0;
-    
-    double x = 20.0; // Start from left margin
-    double y = 20.0; // Start from top margin
-    
-    // If there are existing components, place new one below the bottom-most component
-    if (_canvasComponents.isNotEmpty) {
-      double maxY = 0;
-      for (final comp in _canvasComponents) {
-        final bottomEdge = comp.y + comp.height;
-        if (bottomEdge > maxY) maxY = bottomEdge;
+  Future<void> _showTextStyleEditor(BuilderComponent component) async {
+    final availableFonts = <String>[
+      'Roboto',
+      'Poppins',
+      'Lato',
+      'Nunito',
+      'Montserrat',
+      'Open Sans',
+      'Merriweather',
+    ];
+
+    double fontSize = component.properties['fontSize'] is num
+        ? (component.properties['fontSize'] as num).toDouble()
+        : _defaultFontSizeFor(component);
+    bool isBold = component.properties['isBold'] == true;
+    bool isItalic = component.properties['isItalic'] == true;
+    bool isUnderline = component.properties['isUnderline'] == true;
+    String fontFamily = component.properties['fontFamily'] is String
+        ? component.properties['fontFamily'] as String
+        : 'Roboto';
+    double letterSpacing = component.properties['letterSpacing'] is num
+        ? (component.properties['letterSpacing'] as num).toDouble()
+        : 0.0;
+    double lineHeight = component.properties['lineHeight'] is num
+        ? (component.properties['lineHeight'] as num).toDouble()
+        : 1.25;
+
+    final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Typography & effects'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Font size'),
+                  Slider(
+                    value: fontSize.clamp(8.0, 72.0),
+                    min: 8,
+                    max: 72,
+                    divisions: 64,
+                    label: fontSize.toStringAsFixed(0),
+                    onChanged: (value) => setDialogState(() => fontSize = value),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Font family'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: availableFonts.map((font) {
+                      final bool selected = fontFamily == font;
+                      return ChoiceChip(
+                        label: Text(font),
+                        selected: selected,
+                        onSelected: (value) {
+                          if (value) {
+                            setDialogState(() => fontFamily = font);
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      FilterChip(
+                        label: const Text('Bold'),
+                        selected: isBold,
+                        onSelected: (value) => setDialogState(() => isBold = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Italic'),
+                        selected: isItalic,
+                        onSelected: (value) => setDialogState(() => isItalic = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Underline'),
+                        selected: isUnderline,
+                        onSelected: (value) => setDialogState(() => isUnderline = value),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Letter spacing'),
+                  Slider(
+                    value: letterSpacing.clamp(-1.0, 5.0),
+                    min: -1,
+                    max: 5,
+                    divisions: 60,
+                    label: letterSpacing.toStringAsFixed(2),
+                    onChanged: (value) => setDialogState(() => letterSpacing = value),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Line height'),
+                  Slider(
+                    value: lineHeight.clamp(1.0, 3.0),
+                    min: 1.0,
+                    max: 3.0,
+                    divisions: 20,
+                    label: lineHeight.toStringAsFixed(2),
+                    onChanged: (value) => setDialogState(() => lineHeight = value),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop<Map<String, dynamic>>(context, {
+                  'fontSize': fontSize,
+                  'fontFamily': fontFamily,
+                  'isBold': isBold,
+                  'isItalic': isItalic,
+                  'isUnderline': isUnderline,
+                  'letterSpacing': letterSpacing,
+                  'lineHeight': lineHeight,
+                }),
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      component.properties.addAll(result);
+      _applyFullWidthLayout(component);
+    });
+    _updateCanvasSize();
+  }
+
+  Future<void> _showTextAlignmentPicker(BuilderComponent component) async {
+    final options = <Map<String, dynamic>>[
+      {'label': 'Align left', 'value': 'left', 'icon': Icons.format_align_left},
+      {'label': 'Align center', 'value': 'center', 'icon': Icons.format_align_center},
+      {'label': 'Align right', 'value': 'right', 'icon': Icons.format_align_right},
+      {'label': 'Justify', 'value': 'justify', 'icon': Icons.format_align_justify},
+    ];
+
+    final String current = component.properties['textAlign']?.toString() ?? 'left';
+
+    final String? selection = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Text alignment',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ...options.map((option) {
+              final bool selected = current == option['value'];
+              return ListTile(
+                leading: Icon(option['icon'] as IconData,
+                    color: selected ? const Color(0xFF673AB7) : null),
+                title: Text(option['label'] as String),
+                trailing: selected ? const Icon(Icons.check, color: Color(0xFF673AB7)) : null,
+                onTap: () => Navigator.pop(context, option['value'] as String),
+              );
+            }).toList(),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || selection == null) return;
+
+    setState(() {
+      component.properties['textAlign'] = selection;
+      _applyFullWidthLayout(component);
+    });
+    _updateCanvasSize();
+  }
+
+  Future<void> _showBackgroundStyleEditor(BuilderComponent component) async {
+    const colorOptions = <int>[
+      0x00000000,
+      0xFFFFFFFF,
+      0xFFF7F7F7,
+      0xFFE3F2FD,
+      0xFFE8F5E9,
+      0xFFFFF3E0,
+      0xFFFCE4EC,
+      0xFF1F2933,
+      0xFF4B5563,
+      0xFF8B5CF6,
+      0xFF3B82F6,
+      0xFF10B981,
+      0xFFF59E0B,
+      0xFFEF4444,
+    ];
+
+    int? backgroundColor = component.properties['backgroundColor'] is int
+        ? component.properties['backgroundColor'] as int
+        : null;
+    bool showBorder = component.properties['showBorder'] == true;
+    double borderWidth = component.properties['borderWidth'] is num
+        ? (component.properties['borderWidth'] as num).toDouble().clamp(0.0, 12.0)
+        : (showBorder ? 1.0 : 0.0);
+    int borderColor = component.properties['borderColor'] is int
+        ? component.properties['borderColor'] as int
+        : 0xFFE0E0E0;
+    double borderRadius = component.properties['borderRadius'] is num
+        ? (component.properties['borderRadius'] as num).toDouble().clamp(0.0, 48.0)
+        : 12.0;
+    double padding = component.properties['padding'] is num
+        ? (component.properties['padding'] as num).toDouble().clamp(0.0, 36.0)
+        : 12.0;
+
+    final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Background & border'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Background color'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: colorOptions.map((colorValue) {
+                      final bool isSelected = backgroundColor == colorValue;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => backgroundColor = colorValue),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Color(colorValue),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                              width: isSelected ? 3 : 1,
+                            ),
+                          ),
+                          child: colorValue == 0x00000000
+                              ? const Center(child: Icon(Icons.disabled_by_default_outlined, size: 20))
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: showBorder,
+                    onChanged: (value) => setDialogState(() => showBorder = value),
+                    title: const Text('Show border'),
+                  ),
+                  if (showBorder) ...[
+                    const SizedBox(height: 8),
+                    const Text('Border width'),
+                    Slider(
+                      value: borderWidth.clamp(0.0, 12.0),
+                      min: 0,
+                      max: 12,
+                      divisions: 12,
+                      label: borderWidth.toStringAsFixed(1),
+                      onChanged: (value) => setDialogState(() => borderWidth = value),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Border color'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: colorOptions.map((colorValue) {
+                        final bool isSelected = borderColor == colorValue;
+                        return GestureDetector(
+                          onTap: () => setDialogState(() => borderColor = colorValue),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Color(colorValue),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                width: isSelected ? 3 : 1,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  const Text('Corner radius'),
+                  Slider(
+                    value: borderRadius.clamp(0.0, 48.0),
+                    min: 0,
+                    max: 48,
+                    divisions: 24,
+                    label: borderRadius.toStringAsFixed(0),
+                    onChanged: (value) => setDialogState(() => borderRadius = value),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Padding'),
+                  Slider(
+                    value: padding.clamp(0.0, 36.0),
+                    min: 0,
+                    max: 36,
+                    divisions: 18,
+                    label: padding.toStringAsFixed(0),
+                    onChanged: (value) => setDialogState(() => padding = value),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop<Map<String, dynamic>>(context, {
+                    'backgroundColor': backgroundColor,
+                    'showBorder': showBorder,
+                    'borderWidth': showBorder ? borderWidth : 0.0,
+                    'borderColor': showBorder ? borderColor : component.properties['borderColor'],
+                    'borderRadius': borderRadius,
+                    'padding': padding,
+                  });
+                },
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      component.properties.addAll(result);
+      if (result['showBorder'] != true) {
+        component.properties['borderWidth'] = 0.0;
       }
-      y = maxY + spacing;
-    }
-    
-    final component = BuilderComponent(
+      _applyFullWidthLayout(component);
+    });
+    _updateCanvasSize();
+  }
+
+  void _addComponentToCanvas(ComponentType type, Offset globalOffset) {
+    final RenderBox? canvasBox =
+        _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (canvasBox == null) return;
+
+    final localOffset = canvasBox.globalToLocal(globalOffset);
+    final double componentWidth = _availableComponentWidth();
+    final double baseHeight = _initialComponentHeight(type);
+    final BuilderComponent component = BuilderComponent(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       type: type,
-      x: x,
-      y: y,
+      x: _componentHorizontalPadding,
+      y: math.max(0, localOffset.dy - baseHeight / 2),
       width: componentWidth,
-      height: componentHeight,
+      height: baseHeight,
       properties: _getDefaultProperties(type),
     );
-    
+
+    _applyFullWidthLayout(component);
+
     setState(() {
       _canvasComponents.add(component);
     });
+
+    _updateCanvasSize();
+  }
+
+  void _addComponentToCanvasMobile(ComponentType type) {
+    final double componentWidth = _availableComponentWidth();
+    final double baseHeight = _initialComponentHeight(type);
+    final double y = _findNextAvailableY(baseHeight);
+
+    final component = BuilderComponent(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: type,
+      x: _componentHorizontalPadding,
+      y: y,
+      width: componentWidth,
+      height: baseHeight,
+      properties: _getDefaultProperties(type),
+    );
+
+    _applyFullWidthLayout(component);
+
+    setState(() {
+      _canvasComponents.add(component);
+    });
+
     _updateCanvasSize();
   }
 
   Map<String, dynamic> _getDefaultProperties(ComponentType type) {
     switch (type) {
       case ComponentType.textLabel:
-        return {'text': 'Text Label', 'fontSize': 14, 'color': 0xFF000000, 'isBold': false};
+        return {
+          'text': 'Text Label',
+          'fontSize': 16.0,
+          'color': 0xFF000000,
+          'textColor': 0xFF000000,
+          'isBold': false,
+          'isItalic': false,
+          'isUnderline': false,
+          'fontFamily': 'Roboto',
+          'letterSpacing': 0.0,
+          'lineHeight': 1.25,
+          'textAlign': 'left',
+          'padding': 8.0,
+          'borderRadius': 8.0,
+          'borderWidth': 0.0,
+          'showBorder': false,
+          'autoHeight': true,
+        };
       case ComponentType.textBox:
-        return {'text': 'Text Box Content', 'fontSize': 12, 'color': 0xFF000000};
+        return {
+          'text': 'Text Box Content',
+          'fontSize': 14.0,
+          'color': 0xFF000000,
+          'textColor': 0xFF000000,
+          'isBold': false,
+          'isItalic': false,
+          'isUnderline': false,
+          'fontFamily': 'Roboto',
+          'letterSpacing': 0.0,
+          'lineHeight': 1.35,
+          'textAlign': 'left',
+          'padding': 12.0,
+          'borderRadius': 12.0,
+          'borderWidth': 1.0,
+          'borderColor': 0xFFE0E0E0,
+          'showBorder': true,
+          'backgroundColor': 0xFFF7F7F7,
+          'autoHeight': true,
+        };
       case ComponentType.dateContainer:
         return {'selectedDate': DateTime.now().millisecondsSinceEpoch};
       default:
@@ -929,9 +2165,36 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
   }
 
+  double _initialComponentHeight(ComponentType type) {
+    switch (type) {
+      case ComponentType.textLabel:
+        return 56.0;
+      case ComponentType.textBox:
+        return 72.0;
+      case ComponentType.dateContainer:
+        return 60.0;
+      case ComponentType.imageContainer:
+        return 180.0;
+      case ComponentType.iconContainer:
+        return 120.0;
+      case ComponentType.woodenContainer:
+      case ComponentType.coloredContainer:
+        return 160.0;
+      case ComponentType.calendar:
+        return 220.0;
+      default:
+        return 100.0;
+    }
+  }
+
   void _editComponent(BuilderComponent component) {
+    if (_selectedComponentId != component.id) {
+      setState(() {
+        _selectedComponentId = component.id;
+      });
+    }
     if (component.type == ComponentType.textLabel || component.type == ComponentType.textBox) {
-      _showInlineTextEditor(component);
+      _startInlineTextEditing(component);
     } else if (component.type == ComponentType.dateContainer) {
       _showInlineDatePicker(component);
     }
@@ -1200,15 +2463,22 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   void _deleteComponent(String componentId) {
+    if (_editingComponentId == componentId) {
+      _stopInlineEditing(save: false);
+    }
+
     setState(() {
       _canvasComponents.removeWhere((c) => c.id == componentId);
       if (_selectedComponentId == componentId) {
         _selectedComponentId = null;
       }
     });
+    _updateCanvasSize();
   }
 
   void _clearCanvas() {
+    _stopInlineEditing(save: false);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1224,6 +2494,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               setState(() {
                 _canvasComponents.clear();
                 _selectedComponentId = null;
+                canvasHeight = minCanvasHeight;
               });
               Navigator.pop(context);
             },
@@ -1236,28 +2507,27 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   void _updateCanvasSize() {
-    if (_canvasComponents.isEmpty) return;
-
-    // Calculate the bounds of all components
-    double maxX = 0;
-    double maxY = 0;
-    
-    for (final component in _canvasComponents) {
-      final rightEdge = component.x + component.width;
-      final bottomEdge = component.y + component.height;
-      
-      if (rightEdge > maxX) maxX = rightEdge;
-      if (bottomEdge > maxY) maxY = bottomEdge;
+    if (_canvasComponents.isEmpty) {
+      if ((canvasHeight - minCanvasHeight).abs() > 0.5) {
+        setState(() {
+          canvasHeight = minCanvasHeight;
+        });
+      }
+      return;
     }
-    
-    // Add padding and ensure minimum size
-    final newWidth = math.max(minCanvasWidth, maxX + canvasPadding);
+
+    double maxY = 0;
+    for (final component in _canvasComponents) {
+      final bottomEdge = component.y + component.height;
+      if (bottomEdge > maxY) {
+        maxY = bottomEdge;
+      }
+    }
+
     final newHeight = math.max(minCanvasHeight, maxY + canvasPadding);
-    
-    // Only update if size needs to increase
-    if (newWidth > canvasWidth || newHeight > canvasHeight) {
+
+    if ((newHeight - canvasHeight).abs() > 0.5) {
       setState(() {
-        canvasWidth = newWidth;
         canvasHeight = newHeight;
       });
     }
@@ -1297,7 +2567,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               setState(() {
                 canvasWidth = double.tryParse(widthController.text) ?? canvasWidth;
                 canvasHeight = double.tryParse(heightController.text) ?? canvasHeight;
+                _alignComponentsToCanvasWidth();
               });
+              _updateCanvasSize();
               Navigator.pop(context);
             },
             child: const Text('Update'),
@@ -1352,75 +2624,25 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   void _performAutoAlignment() {
-    if (_canvasComponents.length < 2) return;
+    if (_canvasComponents.isEmpty) return;
 
-    // Detect layout pattern and apply alignment
-    final isColumnLayout = _detectColumnLayout();
-    
-    if (isColumnLayout) {
-      _alignComponentsInColumn();
-    } else {
-      _alignComponentsInRow();
-    }
-    
-    // Update canvas size after alignment
+    final List<BuilderComponent> ordered = List.of(_canvasComponents)
+      ..sort((a, b) => a.y.compareTo(b.y));
+    double currentY = canvasPadding * 0.5;
+
+    setState(() {
+      for (final component in ordered) {
+        _applyFullWidthLayout(component);
+        component.y = currentY;
+        currentY += component.height + _componentVerticalSpacing;
+      }
+    });
+
     _updateCanvasSize();
   }
 
   void _performManualAlignment() {
     _performAutoAlignment();
-  }
-
-  bool _detectColumnLayout() {
-    if (_canvasComponents.length < 2) return false;
-    
-    // Calculate average vertical spacing vs horizontal spacing
-    double totalVerticalSpan = 0;
-    double totalHorizontalSpan = 0;
-    
-    for (int i = 0; i < _canvasComponents.length; i++) {
-      for (int j = i + 1; j < _canvasComponents.length; j++) {
-        final comp1 = _canvasComponents[i];
-        final comp2 = _canvasComponents[j];
-        
-        totalVerticalSpan += (comp1.y - comp2.y).abs();
-        totalHorizontalSpan += (comp1.x - comp2.x).abs();
-      }
-    }
-    
-    return totalVerticalSpan > totalHorizontalSpan;
-  }
-
-  void _alignComponentsInColumn() {
-    _canvasComponents.sort((a, b) => a.y.compareTo(b.y));
-    
-    const double spacing = 15.0;
-    double currentY = 20.0;
-    final centerX = canvasWidth / 2;
-    
-    for (final component in _canvasComponents) {
-      setState(() {
-        component.x = centerX - (component.width / 2);
-        component.y = currentY;
-      });
-      currentY += component.height + spacing;
-    }
-  }
-
-  void _alignComponentsInRow() {
-    _canvasComponents.sort((a, b) => a.x.compareTo(b.x));
-    
-    const double spacing = 15.0;
-    double currentX = 20.0;
-    final centerY = canvasHeight / 2;
-    
-    for (final component in _canvasComponents) {
-      setState(() {
-        component.x = currentX;
-        component.y = centerY - (component.height / 2);
-      });
-      currentX += component.width + spacing;
-    }
   }
 
   Future<void> _saveTemplate() async {
