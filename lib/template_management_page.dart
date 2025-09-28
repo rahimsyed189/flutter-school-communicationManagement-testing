@@ -4487,8 +4487,8 @@ class _CustomTemplateBuilderState extends State<_CustomTemplateBuilder> {
       case ComponentType.iconContainer:
         component = IconContainerComponent(id: id, x: position.dx, y: position.dy);
         break;
-      case ComponentType.gradientSeparator:
-        component = GradientSeparatorComponent(id: id, x: position.dx, y: position.dy);
+      case ComponentType.gradientDivider:
+        component = GradientDividerComponent(id: id, x: position.dx, y: position.dy);
         break;
     }
 

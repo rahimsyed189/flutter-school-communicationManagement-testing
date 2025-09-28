@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'color_picker_dialog.dart';
+
 // Enum for component types
 enum ComponentType {
   calendar,
@@ -11,7 +13,7 @@ enum ComponentType {
   coloredContainer,
   imageContainer,
   iconContainer,
-  gradientSeparator,
+  gradientDivider,
 }
 
 // Base class for all draggable components
@@ -55,8 +57,8 @@ abstract class DraggableComponent {
         return ImageContainerComponent.fromJson(json);
       case 'iconContainer':
         return IconContainerComponent.fromJson(json);
-      case 'gradientSeparator':
-        return GradientSeparatorComponent.fromJson(json);
+      case 'gradientDivider':
+        return GradientDividerComponent.fromJson(json);
       default:
         throw Exception('Unknown component type: ${json['type']}');
     }
@@ -695,6 +697,13 @@ class TextBoxComponent extends DraggableComponent {
             'backgroundColor': Colors.white.value,
             'borderColor': Colors.grey.value,
             'padding': 12.0,
+            'fontFamily': 'Default',
+            'fontWeight': 'normal',
+            'textAlign': 'left',
+            'borderWidth': 1.0,
+            'borderRadius': 8.0,
+            'lineHeight': 1.4,
+            'letterSpacing': 0.0,
           },
         );
 
@@ -706,6 +715,43 @@ class TextBoxComponent extends DraggableComponent {
     final backgroundColor = Color(properties['backgroundColor'] ?? Colors.white.value);
     final borderColor = Color(properties['borderColor'] ?? Colors.grey.value);
     final padding = properties['padding']?.toDouble() ?? 12.0;
+    final String fontFamily = properties['fontFamily'] ?? 'Default';
+    final String fontWeightKey = properties['fontWeight'] ?? 'normal';
+    final String textAlignKey = properties['textAlign'] ?? 'left';
+    final double borderWidth = properties['borderWidth']?.toDouble() ?? 1.0;
+    final double borderRadius = properties['borderRadius']?.toDouble() ?? 8.0;
+    final double lineHeight = properties['lineHeight']?.toDouble() ?? 1.4;
+    final double letterSpacing = properties['letterSpacing']?.toDouble() ?? 0.0;
+
+    FontWeight fontWeight;
+    switch (fontWeightKey) {
+      case 'bold':
+        fontWeight = FontWeight.bold;
+        break;
+      case 'semiBold':
+        fontWeight = FontWeight.w600;
+        break;
+      case 'light':
+        fontWeight = FontWeight.w300;
+        break;
+      default:
+        fontWeight = FontWeight.normal;
+    }
+
+    TextAlign textAlign;
+    switch (textAlignKey) {
+      case 'center':
+        textAlign = TextAlign.center;
+        break;
+      case 'right':
+        textAlign = TextAlign.right;
+        break;
+      case 'justify':
+        textAlign = TextAlign.justify;
+        break;
+      default:
+        textAlign = TextAlign.left;
+    }
 
     return Container(
       width: width,
@@ -713,8 +759,8 @@ class TextBoxComponent extends DraggableComponent {
       padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: backgroundColor,
-        border: Border.all(color: borderColor),
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: borderWidth),
+        borderRadius: BorderRadius.circular(borderRadius),
       ),
       child: SingleChildScrollView(
         child: Text(
@@ -722,7 +768,12 @@ class TextBoxComponent extends DraggableComponent {
           style: TextStyle(
             fontSize: fontSize,
             color: textColor,
+            fontFamily: fontFamily == 'Default' ? null : fontFamily,
+            fontWeight: fontWeight,
+            height: lineHeight,
+            letterSpacing: letterSpacing,
           ),
+          textAlign: textAlign,
         ),
       ),
     );
@@ -730,9 +781,74 @@ class TextBoxComponent extends DraggableComponent {
 
   @override
   Widget buildEditDialog(BuildContext context, Function(Map<String, dynamic>) onUpdate) {
-    TextEditingController textController = TextEditingController(text: properties['text'] ?? '');
+    final textController = TextEditingController(text: properties['text'] ?? '');
     double fontSize = properties['fontSize']?.toDouble() ?? 14.0;
-    
+    double padding = properties['padding']?.toDouble() ?? 12.0;
+    double borderWidth = properties['borderWidth']?.toDouble() ?? 1.0;
+    double borderRadius = properties['borderRadius']?.toDouble() ?? 8.0;
+    double lineHeight = properties['lineHeight']?.toDouble() ?? 1.4;
+    double letterSpacing = properties['letterSpacing']?.toDouble() ?? 0.0;
+    String fontFamily = properties['fontFamily'] ?? 'Default';
+    String fontWeight = properties['fontWeight'] ?? 'normal';
+    String textAlign = properties['textAlign'] ?? 'left';
+    Color textColor = Color(properties['textColor'] ?? Colors.black87.value);
+    Color backgroundColor = Color(properties['backgroundColor'] ?? Colors.white.value);
+    Color borderColor = Color(properties['borderColor'] ?? Colors.grey.value);
+
+    const fontFamilies = [
+      'Default',
+      'Roboto',
+      'Poppins',
+      'Montserrat',
+      'Lato',
+      'Raleway',
+      'Georgia',
+      'Courier New',
+    ];
+
+    final fontWeights = <Map<String, dynamic>>[
+      {'label': 'Light', 'value': 'light'},
+      {'label': 'Normal', 'value': 'normal'},
+      {'label': 'Semi Bold', 'value': 'semiBold'},
+      {'label': 'Bold', 'value': 'bold'},
+    ];
+
+    final alignmentOptions = <Map<String, dynamic>>[
+      {'label': 'Left', 'value': 'left', 'icon': Icons.format_align_left},
+      {'label': 'Center', 'value': 'center', 'icon': Icons.format_align_center},
+      {'label': 'Right', 'value': 'right', 'icon': Icons.format_align_right},
+      {'label': 'Justify', 'value': 'justify', 'icon': Icons.format_align_justify},
+    ];
+
+    Widget buildColorSelector(String label, Color color, ValueChanged<Color> onChanged) {
+      return Row(
+        children: [
+          Expanded(child: Text(label)),
+          GestureDetector(
+            onTap: () async {
+              final result = await showColorPickerDialog(
+                context: context,
+                initialColor: color,
+                title: label,
+              );
+              if (result != null) {
+                onChanged(result);
+              }
+            },
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.black12),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return StatefulBuilder(
       builder: (context, setState) {
         return AlertDialog(
@@ -740,6 +856,7 @@ class TextBoxComponent extends DraggableComponent {
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextField(
                   controller: textController,
@@ -748,24 +865,236 @@ class TextBoxComponent extends DraggableComponent {
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 5,
+                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
+                const Text('Preview', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(padding),
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(borderRadius),
+                    border: Border.all(color: borderColor, width: borderWidth),
+                  ),
+                  child: Text(
+                    textController.text.isEmpty ? 'Sample preview content' : textController.text,
+                    textAlign: () {
+                      switch (textAlign) {
+                        case 'center':
+                          return TextAlign.center;
+                        case 'right':
+                          return TextAlign.right;
+                        case 'justify':
+                          return TextAlign.justify;
+                        default:
+                          return TextAlign.left;
+                      }
+                    }(),
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      color: textColor,
+                      fontFamily: fontFamily == 'Default' ? null : fontFamily,
+                      height: lineHeight,
+                      letterSpacing: letterSpacing,
+                      fontWeight: () {
+                        switch (fontWeight) {
+                          case 'light':
+                            return FontWeight.w300;
+                          case 'semiBold':
+                            return FontWeight.w600;
+                          case 'bold':
+                            return FontWeight.bold;
+                          default:
+                            return FontWeight.normal;
+                        }
+                      }(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('Typography', style: TextStyle(fontWeight: FontWeight.w600)),
                 Row(
                   children: [
-                    const Text('Font Size: '),
+                    const Text('Font Size'),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Slider(
                         value: fontSize,
                         min: 10,
-                        max: 24,
-                        divisions: 14,
-                        label: fontSize.round().toString(),
-                        onChanged: (value) {
-                          setState(() {
-                            fontSize = value;
-                          });
-                        },
+                        max: 36,
+                        divisions: 26,
+                        label: fontSize.toStringAsFixed(0),
+                        onChanged: (value) => setState(() => fontSize = value),
                       ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(fontSize.toStringAsFixed(0), textAlign: TextAlign.right),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: fontFamily,
+                  decoration: const InputDecoration(
+                    labelText: 'Font Family',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: fontFamilies
+                      .map((family) => DropdownMenuItem(
+                            value: family,
+                            child: Text(family),
+                          ))
+                      .toList(),
+                  onChanged: (value) => setState(() => fontFamily = value ?? 'Default'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: fontWeight,
+                  decoration: const InputDecoration(
+                    labelText: 'Font Weight',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: fontWeights
+                      .map((option) => DropdownMenuItem(
+                            value: option['value'] as String,
+                            child: Text(option['label'] as String),
+                          ))
+                      .toList(),
+                  onChanged: (value) => setState(() => fontWeight = value ?? 'normal'),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Line Height'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Slider(
+                        value: lineHeight,
+                        min: 1.0,
+                        max: 2.0,
+                        divisions: 20,
+                        label: lineHeight.toStringAsFixed(1),
+                        onChanged: (value) => setState(() => lineHeight = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(lineHeight.toStringAsFixed(1), textAlign: TextAlign.right),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Letter Spacing'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Slider(
+                        value: letterSpacing,
+                        min: -1.0,
+                        max: 4.0,
+                        divisions: 50,
+                        label: letterSpacing.toStringAsFixed(1),
+                        onChanged: (value) => setState(() => letterSpacing = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(letterSpacing.toStringAsFixed(1), textAlign: TextAlign.right),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Alignment', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: alignmentOptions.map((option) {
+                    final isSelected = textAlign == option['value'];
+                    return ChoiceChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(option['icon'] as IconData, size: 18),
+                          const SizedBox(width: 4),
+                          Text(option['label'] as String),
+                        ],
+                      ),
+                      selected: isSelected,
+                      onSelected: (_) => setState(() => textAlign = option['value'] as String),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                const Text('Colors', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                buildColorSelector('Text Color', textColor, (color) => setState(() => textColor = color)),
+                const SizedBox(height: 12),
+                buildColorSelector('Background Color', backgroundColor, (color) => setState(() => backgroundColor = color)),
+                const SizedBox(height: 12),
+                buildColorSelector('Border Color', borderColor, (color) => setState(() => borderColor = color)),
+                const SizedBox(height: 16),
+                const Text('Layout', style: TextStyle(fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    const Text('Padding'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Slider(
+                        value: padding,
+                        min: 0,
+                        max: 40,
+                        divisions: 40,
+                        label: padding.toStringAsFixed(0),
+                        onChanged: (value) => setState(() => padding = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(padding.toStringAsFixed(0), textAlign: TextAlign.right),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('Border Width'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Slider(
+                        value: borderWidth,
+                        min: 0,
+                        max: 8,
+                        divisions: 32,
+                        label: borderWidth.toStringAsFixed(1),
+                        onChanged: (value) => setState(() => borderWidth = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(borderWidth.toStringAsFixed(1), textAlign: TextAlign.right),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('Border Radius'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Slider(
+                        value: borderRadius,
+                        min: 0,
+                        max: 40,
+                        divisions: 40,
+                        label: borderRadius.toStringAsFixed(0),
+                        onChanged: (value) => setState(() => borderRadius = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(borderRadius.toStringAsFixed(0), textAlign: TextAlign.right),
                     ),
                   ],
                 ),
@@ -782,6 +1111,17 @@ class TextBoxComponent extends DraggableComponent {
                 onUpdate({
                   'text': textController.text,
                   'fontSize': fontSize,
+                  'padding': padding,
+                  'borderWidth': borderWidth,
+                  'borderRadius': borderRadius,
+                  'lineHeight': lineHeight,
+                  'letterSpacing': letterSpacing,
+                  'fontFamily': fontFamily,
+                  'fontWeight': fontWeight,
+                  'textAlign': textAlign,
+                  'textColor': textColor.value,
+                  'backgroundColor': backgroundColor.value,
+                  'borderColor': borderColor.value,
                 });
                 Navigator.pop(context);
               },
@@ -1431,90 +1771,51 @@ class IconContainerComponent extends DraggableComponent {
   }
 }
 
-class GradientSeparatorComponent extends DraggableComponent {
-  GradientSeparatorComponent({
+class GradientDividerComponent extends DraggableComponent {
+  GradientDividerComponent({
     required String id,
-    double x = 0,
-    double y = 0,
+    required double x,
+    required double y,
     Map<String, dynamic>? properties,
-  }) : super(
-          id: id,
-          type: ComponentType.gradientSeparator,
-          x: x,
-          y: y,
-          width: 320,
-          height: 28,
-          properties: properties ?? {
-            'startColor': const Color(0xFFFF8A65).value,
-            'endColor': const Color(0xFFF06292).value,
-            'thickness': 8.0,
-            'cornerRadius': 20.0,
-            'showShadow': true,
-            'shadowOpacity': 0.25,
-          },
-        );
+  }) : super(id: id, x: x, y: y, width: 200, height: 4, properties: properties ?? {}, type: ComponentType.gradientDivider);
+
+  @override
+  ComponentType get type => ComponentType.gradientDivider;
 
   @override
   Widget buildWidget() {
-    final startColor = Color(properties['startColor'] ?? const Color(0xFFFF8A65).value);
-    final endColor = Color(properties['endColor'] ?? const Color(0xFFF06292).value);
-    final thickness = (properties['thickness'] ?? 8.0).toDouble().clamp(2.0, 36.0);
-    final cornerRadius = (properties['cornerRadius'] ?? 20.0).toDouble().clamp(0.0, 60.0);
-    final showShadow = properties['showShadow'] != false;
-    final shadowOpacity = (properties['shadowOpacity'] ?? 0.25).toDouble().clamp(0.0, 1.0);
-
-    final double containerHeight = thickness + 8;
-
-    return SizedBox(
-      width: width,
-      height: containerHeight,
-      child: Center(
-        child: Container(
-          width: width,
-          height: thickness,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [startColor, endColor],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-            borderRadius: BorderRadius.circular(cornerRadius),
-            boxShadow: showShadow
-                ? [
-                    BoxShadow(
-                      color: endColor.withOpacity(shadowOpacity),
-                      blurRadius: cornerRadius,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [],
-          ),
+    List<Color> gradientColors = [
+      Color(properties['color1'] ?? 0xFF2196F3),
+      Color(properties['color2'] ?? 0xFF21CBF3),
+    ];
+    double dividerHeight = properties['height']?.toDouble() ?? 4.0;
+    double dividerWidth = properties['width']?.toDouble() ?? width;
+    double cornerRadius = properties['cornerRadius']?.toDouble() ?? 2.0;
+    
+    return Container(
+      width: dividerWidth,
+      height: dividerHeight,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(cornerRadius),
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
         ),
       ),
     );
   }
 
   @override
-  Widget buildEditDialog(BuildContext context, Function(Map<String, dynamic>) onUpdate) {
-    Color startColor = Color(properties['startColor'] ?? const Color(0xFFFF8A65).value);
-    Color endColor = Color(properties['endColor'] ?? const Color(0xFFF06292).value);
-    double thickness = (properties['thickness'] ?? 8.0).toDouble();
-    double cornerRadius = (properties['cornerRadius'] ?? 20.0).toDouble();
-    bool showShadow = properties['showShadow'] != false;
-    double shadowOpacity = (properties['shadowOpacity'] ?? 0.25).toDouble();
-
-  thickness = thickness.clamp(2.0, 36.0).toDouble();
-  cornerRadius = cornerRadius.clamp(0.0, 60.0).toDouble();
-  shadowOpacity = shadowOpacity.clamp(0.0, 1.0).toDouble();
-
-    final gradientPresets = <List<Color>>[
-      [const Color(0xFFFF8A65), const Color(0xFFF06292)],
-      [const Color(0xFF7C4DFF), const Color(0xFF536DFE)],
-      [const Color(0xFF26C6DA), const Color(0xFF00ACC1)],
-      [const Color(0xFFFFD54F), const Color(0xFFFF8F00)],
-      [const Color(0xFFAB47BC), const Color(0xFF8E24AA)],
-      [const Color(0xFF29B6F6), const Color(0xFF0288D1)],
-    ];
+  Widget buildEditDialog(
+    BuildContext context,
+    Function(Map<String, dynamic>) onUpdate,
+  ) {
+    Color color1 = Color(properties['color1'] ?? 0xFF2196F3);
+    Color color2 = Color(properties['color2'] ?? 0xFF21CBF3);
+    double dividerHeight = properties['height']?.toDouble() ?? 4.0;
+    double dividerWidth = properties['width']?.toDouble() ?? 200.0;
+    double cornerRadius = properties['cornerRadius']?.toDouble() ?? 2.0;
 
     return StatefulBuilder(
       builder: (context, setState) {
@@ -1523,93 +1824,148 @@ class GradientSeparatorComponent extends DraggableComponent {
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Gradient Presets',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: gradientPresets.map((preset) {
-                    final isSelected = startColor.value == preset[0].value && endColor.value == preset[1].value;
-                    return GestureDetector(
-                      onTap: () => setState(() {
-                        startColor = preset[0];
-                        endColor = preset[1];
-                      }),
-                      child: Container(
-                        width: 64,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: preset,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected ? const Color(0xFF673AB7) : Colors.transparent,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
                 Row(
                   children: [
-                    const Text('Thickness'),
+                    const Text('Width: '),
                     Expanded(
                       child: Slider(
-                        value: thickness,
-                        min: 2,
-                        max: 36,
-                        divisions: 34,
-                        label: '${thickness.toStringAsFixed(0)} px',
-                        onChanged: (value) => setState(() => thickness = value),
+                        value: dividerWidth,
+                        min: 50,
+                        max: 400,
+                        divisions: 35,
+                        label: dividerWidth.round().toString(),
+                        onChanged: (value) {
+                          setState(() {
+                            dividerWidth = value;
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
                 Row(
                   children: [
-                    const Text('Corner radius'),
+                    const Text('Height: '),
+                    Expanded(
+                      child: Slider(
+                        value: dividerHeight,
+                        min: 1,
+                        max: 20,
+                        divisions: 19,
+                        label: dividerHeight.round().toString(),
+                        onChanged: (value) {
+                          setState(() {
+                            dividerHeight = value;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('Corner Radius: '),
                     Expanded(
                       child: Slider(
                         value: cornerRadius,
                         min: 0,
-                        max: 60,
-                        divisions: 30,
-                        label: '${cornerRadius.toStringAsFixed(0)} px',
-                        onChanged: (value) => setState(() => cornerRadius = value),
+                        max: 10,
+                        divisions: 20,
+                        label: cornerRadius.toStringAsFixed(1),
+                        onChanged: (value) {
+                          setState(() {
+                            cornerRadius = value;
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Glow shadow'),
-                  value: showShadow,
-                  onChanged: (value) => setState(() => showShadow = value),
-                ),
-                if (showShadow) Row(
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Shadow strength'),
-                    Expanded(
-                      child: Slider(
-                        value: shadowOpacity,
-                        min: 0,
-                        max: 1,
-                        divisions: 10,
-                        label: shadowOpacity.toStringAsFixed(2),
-                        onChanged: (value) => setState(() => shadowOpacity = value),
-                      ),
+                    Column(
+                      children: [
+                        const Text('Start Color'),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: color1,
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () async {
+                                final newColor = await showColorPickerDialog(
+                                  context: context,
+                                  initialColor: color1,
+                                  title: 'Select Start Color',
+                                );
+                                if (newColor != null) {
+                                  setState(() {
+                                    color1 = newColor;
+                                  });
+                                }
+                              },
+                              child: Container(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        const Text('End Color'),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: color2,
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () async {
+                                final newColor = await showColorPickerDialog(
+                                  context: context,
+                                  initialColor: color2,
+                                  title: 'Select End Color',
+                                );
+                                if (newColor != null) {
+                                  setState(() {
+                                    color2 = newColor;
+                                  });
+                                }
+                              },
+                              child: Container(),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: dividerWidth * 0.8,
+                  height: dividerHeight,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(cornerRadius),
+                    gradient: LinearGradient(
+                      colors: [color1, color2],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1622,16 +1978,15 @@ class GradientSeparatorComponent extends DraggableComponent {
             ElevatedButton(
               onPressed: () {
                 onUpdate({
-                  'startColor': startColor.value,
-                  'endColor': endColor.value,
-                  'thickness': thickness,
+                  'color1': color1.value,
+                  'color2': color2.value,
+                  'height': dividerHeight,
+                  'width': dividerWidth,
                   'cornerRadius': cornerRadius,
-                  'showShadow': showShadow,
-                  'shadowOpacity': shadowOpacity,
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Apply'),
+              child: const Text('Update'),
             ),
           ],
         );
@@ -1643,7 +1998,7 @@ class GradientSeparatorComponent extends DraggableComponent {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'type': 'gradientSeparator',
+      'type': 'gradientDivider',
       'x': x,
       'y': y,
       'width': width,
@@ -1652,8 +2007,8 @@ class GradientSeparatorComponent extends DraggableComponent {
     };
   }
 
-  factory GradientSeparatorComponent.fromJson(Map<String, dynamic> json) {
-    return GradientSeparatorComponent(
+  factory GradientDividerComponent.fromJson(Map<String, dynamic> json) {
+    return GradientDividerComponent(
       id: json['id'],
       x: json['x']?.toDouble() ?? 0,
       y: json['y']?.toDouble() ?? 0,
@@ -1661,3 +2016,4 @@ class GradientSeparatorComponent extends DraggableComponent {
     );
   }
 }
+
