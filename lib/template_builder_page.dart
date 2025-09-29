@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'widgets/draggable_template_components.dart';
 import 'widgets/color_picker_dialog.dart';
 
@@ -38,9 +38,12 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   // Canvas properties
   double canvasWidth = 400;
   double canvasHeight = 360;
-  Color canvasBackgroundColor = Colors.white;
+  Color canvasBackgroundColor = const Color(0xFFF8FAFC); // Light gradient start color
   Gradient? canvasBackgroundGradient;
-  bool useGradientBackground = false;
+  bool useGradientBackground = true; // Default to gradient
+  Color canvasBorderColor = Colors.grey.shade300;
+  double canvasBorderRadius = 12.0; // Curved corners
+  double canvasBorderWidth = 0.0;
   static const String _customGradientPresetId = 'custom_gradient';
   static const String _defaultGradientDirection = 'diagonal';
   static const Map<String, List<Alignment>> _gradientDirectionPresets = {
@@ -56,8 +59,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     'reverseDiagonal': 'Reverse Diagonal',
   };
   String _selectedBackgroundPresetId = 'preset_solid_white';
-  Color _customGradientStartColor = const Color(0xFF1E3C72);
-  Color _customGradientEndColor = const Color(0xFF2A5298);
+  Color _customGradientStartColor = const Color(0xFFF8FAFC); // Very light blue-gray
+  Color _customGradientEndColor = const Color(0xFFBFDBFE); // Light blue
   String _customGradientDirection = _defaultGradientDirection;
   final GlobalKey _canvasKey = GlobalKey();
 
@@ -74,9 +77,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
   // Auto-alignment
   bool _autoAlignEnabled = true;
-  bool _isPropertiesPanelVisible = false;
-  String? _propertiesPanelComponentId;
-  static const Duration _propertiesPanelAnimationDuration = Duration(milliseconds: 260);
   
   // Background presets
   static final List<Map<String, dynamic>> _backgroundPresets = [
@@ -289,36 +289,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             child: Column(
               children: [
                 
-                // Canvas Background Section
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF5E35B1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Canvas Background',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildBackgroundPresetGrid(),
-                    ],
-                  ),
-                ),
-                
                 // Canvas Tools Section
                 Expanded(
                   child: SingleChildScrollView(
@@ -347,7 +317,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           // Canvas Area (Right Side)
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 150), // Extra bottom padding for components panel
               child: Column(
                 children: [
                   // Canvas Controls
@@ -376,38 +346,25 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           ),
         ]);
           } else {
-            // Mobile Layout - Vertical with bottom drawer
+            // Mobile Layout - Canvas with fixed bottom components panel
             return Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                
-                // Canvas Area (Mobile)
+                // Canvas Area (Mobile) - takes remaining space, with bottom padding for components panel
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      children: [
-                        // Mobile Canvas Controls
-                        _buildMobileCanvasControls(),
-                        const SizedBox(height: 12),
-                        
-                        // Canvas
-                        Expanded(
-                          child: Scrollbar(
-                            thumbVisibility: true,
-                            child: SingleChildScrollView(
-                physics: (_isDraggingComponent || _isResizingComponent)
-                                  ? const NeverScrollableScrollPhysics()
-                                  : const BouncingScrollPhysics(),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                child: _buildCanvas(),
-                              ),
-                            ),
-                          ),
+                    padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 120), // Extra bottom padding for components panel
+                    child: Scrollbar(
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        physics: (_isDraggingComponent || _isResizingComponent)
+                            ? const NeverScrollableScrollPhysics()
+                            : const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: _buildCanvas(),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -417,23 +374,21 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               },
             ),
           ),
-          if (_isPropertiesPanelVisible)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _closePropertiesPanel,
-                child: Container(
-                  color: Colors.black.withOpacity(0.25),
-                ),
-              ),
+          // Fixed Bottom Components Panel (for all screen sizes)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isTablet = constraints.maxWidth > 600;
+                return isTablet ? _buildSlidingComponentsPanel() : _buildSlidingComponentsPanelMobile();
+              },
             ),
-          _buildPropertiesPanel(),
+          ),
         ],
       ),
     );
-  }
-
-  Widget _buildMobileCanvasControls() {
-    return _buildSlidingComponentsPanelMobile();
   }
 
   Widget _buildSlidingComponentsPanelMobile() {
@@ -442,132 +397,135 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     return StatefulBuilder(
       builder: (context, setSliderState) => Container(
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF1A1A2E),
+              const Color(0xFF16213E),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
+              spreadRadius: 0,
             ),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header with toggle button
+            // Header with drag handle and toggle
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
+              padding: const EdgeInsets.only(top: 8, left: 16, right: 16, bottom: 12),
+              child: Column(
                 children: [
-                  Icon(
-                    Icons.widgets,
-                    size: 18,
-                    color: const Color(0xFF673AB7),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Components',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF333333),
+                  // Drag handle
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    '${canvasWidth.toInt()}×${canvasHeight.toInt()}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      setSliderState(() {
-                        _isPanelExpanded = !_isPanelExpanded;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF673AB7).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        _isPanelExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        size: 18,
-                        color: const Color(0xFF673AB7),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Expandable components section
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              height: _isPanelExpanded ? 140 : 0,
-              child: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // Header row
+                  Row(
                     children: [
-                      // Canvas Properties button
-                      Row(
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4FC3F7).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.construction,
+                          size: 18,
+                          color: const Color(0xFF4FC3F7),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => _showCanvasBackgroundStyleEditor(),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFF5E35B1), Color(0xFF673AB7)],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF5E35B1).withOpacity(0.3),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.palette,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    const Text(
-                                      'Canvas Properties',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                          Text(
+                            'Component Library',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Drag & drop to build',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white.withOpacity(0.7),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      _buildMobileHorizontalComponentsList(),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${canvasWidth.toInt()}×${canvasHeight.toInt()}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.white.withOpacity(0.8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          setSliderState(() {
+                            _isPanelExpanded = !_isPanelExpanded;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4FC3F7).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFF4FC3F7).withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            _isPanelExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 18,
+                            color: const Color(0xFF4FC3F7),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+                ],
+              ),
+            ),
+            // Animated components list
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: _isPanelExpanded ? 100 : 0,
+              child: SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 20),
+                  child: _buildModernComponentsGrid(),
                 ),
               ),
             ),
@@ -675,79 +633,158 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     return StatefulBuilder(
       builder: (context, setSliderState) => Container(
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF0F0F23),
+              const Color(0xFF1A1A2E),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 3),
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 25,
+              offset: const Offset(0, -8),
+              spreadRadius: 0,
             ),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header with toggle button
+            // Header with drag handle and toggle
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
+              padding: const EdgeInsets.only(top: 12, left: 20, right: 20, bottom: 16),
+              child: Column(
                 children: [
-                  Icon(
-                    Icons.widgets,
-                    size: 20,
-                    color: const Color(0xFF673AB7),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Components',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF333333),
+                  // Drag handle
+                  Container(
+                    width: 50,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    'Canvas: ${canvasWidth.toInt()}×${canvasHeight.toInt()}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () {
-                      setSliderState(() {
-                        _isPanelExpanded = !_isPanelExpanded;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF673AB7).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
+                  // Header row
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF4FC3F7),
+                              const Color(0xFF29B6F6),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF4FC3F7).withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.construction,
+                          size: 22,
+                          color: Colors.white,
+                        ),
                       ),
-                      child: Icon(
-                        _isPanelExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        size: 20,
-                        color: const Color(0xFF673AB7),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Component Library',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            'Drag components to canvas • Build amazing templates',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withOpacity(0.7),
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          'Canvas: ${canvasWidth.toInt()}×${canvasHeight.toInt()}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withOpacity(0.9),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          setSliderState(() {
+                            _isPanelExpanded = !_isPanelExpanded;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF4FC3F7).withOpacity(0.3),
+                                const Color(0xFF29B6F6).withOpacity(0.2),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF4FC3F7).withOpacity(0.4),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            _isPanelExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                            color: const Color(0xFF4FC3F7),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            
-            // Expandable components section
+            // Animated components list
             AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 350),
               curve: Curves.easeInOut,
-              height: _isPanelExpanded ? 140 : 0,
+              height: _isPanelExpanded ? 130 : 0,
               child: SingleChildScrollView(
                 child: Container(
-                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-                  child: _buildHorizontalComponentsList(),
+                  padding: const EdgeInsets.only(left: 20, right: 20, bottom: 24),
+                  child: _buildModernComponentsGrid(),
                 ),
               ),
             ),
@@ -843,6 +880,113 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     );
   }
 
+  Widget _buildModernComponentsGrid() {
+    final components = [
+      {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'label': 'Text', 'color': const Color(0xFF4FC3F7)},
+      {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'label': 'Text Box', 'color': const Color(0xFF66BB6A)},
+      {'type': ComponentType.dateContainer, 'icon': Icons.calendar_today, 'label': 'Date', 'color': const Color(0xFFEF5350)},
+      {'type': ComponentType.imageContainer, 'icon': Icons.image, 'label': 'Image', 'color': const Color(0xFFFF7043)},
+      {'type': ComponentType.iconContainer, 'icon': Icons.emoji_emotions, 'label': 'Icon', 'color': const Color(0xFFFFCA28)},
+      {'type': ComponentType.woodenContainer, 'icon': Icons.crop_square, 'label': 'Panel', 'color': const Color(0xFF8D6E63)},
+      {'type': ComponentType.coloredContainer, 'icon': Icons.rectangle, 'label': 'Box', 'color': const Color(0xFF9C27B0)},
+      {'type': ComponentType.calendar, 'icon': Icons.date_range, 'label': 'Calendar', 'color': const Color(0xFF5C6BC0)},
+      {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'label': 'Divider', 'color': const Color(0xFF26A69A)},
+    ];
+
+    return SizedBox(
+      height: 80,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: components.length,
+        itemBuilder: (context, index) {
+          final component = components[index];
+          return Container(
+            margin: const EdgeInsets.only(right: 12),
+            child: _buildModernComponentTile(
+              component['type'] as ComponentType,
+              component['icon'] as IconData,
+              component['label'] as String,
+              component['color'] as Color,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildModernComponentTile(ComponentType type, IconData icon, String label, Color accentColor) {
+    return GestureDetector(
+      onTap: () => _addComponentToCanvasTablet(type),
+      child: Container(
+        width: 70,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.white.withOpacity(0.2),
+              Colors.white.withOpacity(0.1),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    accentColor,
+                    accentColor.withOpacity(0.8),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Map<String, dynamic> _getComponentConfig(ComponentType type) {
     final components = {
       ComponentType.textLabel: {'icon': Icons.text_fields, 'label': 'Text Label'},
@@ -896,20 +1040,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               icon: Icons.fullscreen,
               label: 'Resize Canvas',
               onTap: _showCanvasSizeDialog,
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        
-        // Background
-        _buildToolSection(
-          'Background',
-          Icons.palette,
-          [
-            _buildToolTile(
-              icon: Icons.palette,
-              label: 'Canvas Properties',
-              onTap: _showCanvasBackgroundStyleEditor,
             ),
           ],
         ),
@@ -1071,54 +1201,17 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     );
   }
 
-  Widget _buildPropertiesPanel() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final double panelWidth = screenWidth >= 920
-        ? 320
-        : math.min(screenWidth * 0.85, 280);
-    final BuilderComponent? activeComponent = _findComponentById(_propertiesPanelComponentId);
-
-    return AnimatedPositioned(
-      duration: _propertiesPanelAnimationDuration,
-      curve: Curves.easeOutCubic,
-      top: 0,
-      bottom: 0,
-      right: _isPropertiesPanelVisible ? 0 : -panelWidth - 40,
-      child: IgnorePointer(
-        ignoring: !_isPropertiesPanelVisible,
-        child: SizedBox(
-          width: panelWidth,
-          child: GestureDetector(
-            onHorizontalDragEnd: (details) {
-              // If swiped to the right with enough velocity, close the panel
-              if (details.primaryVelocity != null && details.primaryVelocity! > 300) {
-                _closePropertiesPanel();
-              }
-            },
-            child: Material(
-              elevation: 20,
-              color: Colors.white,
-              child: activeComponent == null
-                  ? const SizedBox.shrink()
-                  : _buildPropertiesPanelContent(activeComponent),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPropertiesPanelContent(BuilderComponent component) {
+  List<Widget> _buildPropertiesPanelContentList(BuilderComponent component) {
     final bool isTextComponent = _canInlineEdit(component);
     final bool autoHeightEnabled = component.properties['autoHeight'] != false;
     final double fontSize = component.properties['fontSize'] is num
         ? (component.properties['fontSize'] as num).toDouble()
         : _defaultFontSizeFor(component);
     final bool isBold = component.properties['isBold'] == true;
-    final int? colorValue = component.properties['color'] is int
-        ? component.properties['color'] as int
-        : component.properties['textColor'] is int
-            ? component.properties['textColor'] as int
+    final int? colorValue = component.properties['textColor'] is int
+        ? component.properties['textColor'] as int
+        : component.properties['color'] is int
+            ? component.properties['color'] as int
             : null;
     final Color textColor = Color(colorValue ?? 0xFF000000);
     final TextAlign textAlign = _resolveTextAlign(component);
@@ -1250,7 +1343,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       ..add(
         ElevatedButton.icon(
           onPressed: () {
-            _closePropertiesPanel();
+            Navigator.of(context).pop();
             _deleteComponent(component.id);
           },
           style: ElevatedButton.styleFrom(
@@ -1268,65 +1361,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       )
       ..add(const SizedBox(height: 12));
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-          decoration: const BoxDecoration(
-            color: Color(0xFFF3F4F6),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.tune, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _humanReadableComponentName(component.type),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'ID: ${component.id}',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: _closePropertiesPanel,
-                icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            children: body,
-          ),
-        ),
-      ],
-    );
+    return body;
   }
 
   Widget _buildPanelSectionTitle(String title) {
@@ -1375,21 +1410,21 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: isActive ? activeColor : inactiveColor,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: borderColor, width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 18, color: iconColor),
-                const SizedBox(width: 8),
+                Icon(icon, size: 14, color: iconColor),
+                const SizedBox(width: 6),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: textColor,
                   ),
@@ -1844,8 +1879,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           decoration: BoxDecoration(
             color: useGradientBackground ? null : canvasBackgroundColor,
             gradient: useGradientBackground ? canvasBackgroundGradient : null,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300, width: 2),
+            borderRadius: BorderRadius.circular(canvasBorderRadius),
+            border: canvasBorderWidth > 0 
+                ? Border.all(color: canvasBorderColor, width: canvasBorderWidth)
+                : null,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
@@ -1884,6 +1921,12 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                     ),
                   ),
                   ..._canvasComponents.map((component) => _buildCanvasComponent(component)).toList(),
+                  // Canvas Properties Button
+                  Positioned(
+                    bottom: 16,
+                    right: 16,
+                    child: _buildCanvasPropertiesButton(),
+                  ),
                 ],
               );
             },
@@ -1958,15 +2001,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             clipBehavior: Clip.none,
             children: [
               // Component Content
-              _buildComponentContent(component, isEditing: isEditing),
+              Container(
+                key: ValueKey('component_${component.id}_${component.properties['color'] ?? component.properties['textColor'] ?? 0xFF000000}'),
+                child: _buildComponentContent(component, isEditing: isEditing, isSelected: isSelected),
+              ),
               
               // Selection Controls
               if (isSelected && !isEditing) ...[
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: _buildPropertiesButton(component),
-                ),
                 Positioned(
                   bottom: 6,
                   right: 6,
@@ -1980,7 +2021,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     );
   }
 
-  Widget _buildComponentContent(BuilderComponent component, {bool isEditing = false}) {
+  Widget _buildComponentContent(BuilderComponent component, {bool isEditing = false, bool isSelected = false}) {
     switch (component.type) {
       case ComponentType.textLabel:
         if (isEditing) {
@@ -2018,6 +2059,31 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           ),
         );
       
+      case ComponentType.gradientDivider:
+        // Create gradient divider component
+        final color1 = Color(component.properties['color1'] ?? 0xFF6366F1);
+        final color2 = Color(component.properties['color2'] ?? 0xFF8B5CF6);
+        final dividerHeight = component.properties['height']?.toDouble() ?? 4.0;
+        final cornerRadius = component.properties['cornerRadius']?.toDouble() ?? 2.0;
+        
+        return Container(
+          width: component.width,
+          height: component.height, // Use full component height for clickable area
+          alignment: Alignment.center, // Center the visual divider
+          child: Container(
+            width: component.width,
+            height: dividerHeight, // Visual height
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(cornerRadius),
+              gradient: LinearGradient(
+                colors: [color1, color2],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+        );
+      
       default:
         return Container(
           color: Colors.grey.shade200,
@@ -2052,13 +2118,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Ink(
-            width: 40,
-            height: 40,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: resolvedBackgroundColor,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, size: 20, color: resolvedIconColor),
+            child: Icon(icon, size: 16, color: resolvedIconColor),
           ),
         ),
       ),
@@ -2161,24 +2227,405 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     return null;
   }
 
-  void _openPropertiesPanel(BuilderComponent component) {
-    setState(() {
-      _propertiesPanelComponentId = component.id;
-      _isPropertiesPanelVisible = true;
-    });
-  }
+  void _showPropertiesDialog(BuilderComponent component) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final bool isTextComponent = _canInlineEdit(component);
+            final bool autoHeightEnabled = component.properties['autoHeight'] != false;
+            double fontSize = component.properties['fontSize'] is num
+                ? (component.properties['fontSize'] as num).toDouble()
+                : _defaultFontSizeFor(component);
+            bool isBold = component.properties['isBold'] == true;
+            final int? colorValue = component.properties['textColor'] is int
+                ? component.properties['textColor'] as int
+                : component.properties['color'] is int
+                    ? component.properties['color'] as int
+                    : null;
+            Color textColor = Color(colorValue ?? 0xFF000000);
+            final TextAlign textAlign = _resolveTextAlign(component);
 
-  void _closePropertiesPanel() {
-    if (!_isPropertiesPanelVisible) return;
-    setState(() {
-      _isPropertiesPanelVisible = false;
-    });
-    Future.delayed(_propertiesPanelAnimationDuration, () {
-      if (!mounted || _isPropertiesPanelVisible) return;
-      setState(() {
-        _propertiesPanelComponentId = null;
-      });
-    });
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SizedBox(
+                width: 400,
+                height: MediaQuery.of(context).size.height * 0.8,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Component Properties',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: Icon(Icons.close, size: 18, color: Colors.grey.shade600),
+                            padding: EdgeInsets.zero,
+                            constraints: BoxConstraints(minWidth: 24, minHeight: 24),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Divider
+                    Container(
+                      height: 1,
+                      color: Colors.grey.shade300,
+                    ),
+                    // Content
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Gradient Divider Properties
+                            if (component.type == ComponentType.gradientDivider) ...[
+                              Text(
+                                'Gradient Divider Settings',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Height Slider
+                              Text('Height: ${(component.properties['height']?.toDouble() ?? 4.0).toInt()}px', 
+                                style: TextStyle(fontWeight: FontWeight.w500)),
+                              Slider(
+                                value: component.properties['height']?.toDouble() ?? 4.0,
+                                min: 1.0,
+                                max: 20.0,
+                                divisions: 19,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    component.properties['height'] = value;
+                                    component.height = value;
+                                  });
+                                  setState(() {}); // Update main UI
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Corner Radius Slider
+                              Text('Corner Radius: ${(component.properties['cornerRadius']?.toDouble() ?? 2.0).toStringAsFixed(1)}px', 
+                                style: TextStyle(fontWeight: FontWeight.w500)),
+                              Slider(
+                                value: component.properties['cornerRadius']?.toDouble() ?? 2.0,
+                                min: 0.0,
+                                max: 10.0,
+                                divisions: 20,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    component.properties['cornerRadius'] = value;
+                                  });
+                                  setState(() {}); // Update main UI
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Gradient Colors
+                              Row(
+                                children: [
+                                  // Start Color
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Start Color', style: TextStyle(fontWeight: FontWeight.w500)),
+                                        const SizedBox(height: 8),
+                                        GestureDetector(
+                                          onTap: () async {
+                                            final newColor = await _showAdvancedColorPicker(
+                                              context,
+                                              Color(component.properties['color1'] ?? 0xFF6366F1),
+                                              'Select Start Color',
+                                            );
+                                            if (newColor != null) {
+                                              setDialogState(() {
+                                                component.properties['color1'] = newColor.value;
+                                              });
+                                              setState(() {}); // Update main UI
+                                            }
+                                          },
+                                          child: Container(
+                                            width: double.infinity,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: Color(component.properties['color1'] ?? 0xFF6366F1),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.grey.shade300),
+                                            ),
+                                            child: const Icon(Icons.palette, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  // End Color
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('End Color', style: TextStyle(fontWeight: FontWeight.w500)),
+                                        const SizedBox(height: 8),
+                                        GestureDetector(
+                                          onTap: () async {
+                                            final newColor = await _showAdvancedColorPicker(
+                                              context,
+                                              Color(component.properties['color2'] ?? 0xFF8B5CF6),
+                                              'Select End Color',
+                                            );
+                                            if (newColor != null) {
+                                              setDialogState(() {
+                                                component.properties['color2'] = newColor.value;
+                                              });
+                                              setState(() {}); // Update main UI
+                                            }
+                                          },
+                                          child: Container(
+                                            width: double.infinity,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: Color(component.properties['color2'] ?? 0xFF8B5CF6),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.grey.shade300),
+                                            ),
+                                            child: const Icon(Icons.palette, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Preview
+                              Text('Preview:', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                height: component.properties['height']?.toDouble() ?? 4.0,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(component.properties['cornerRadius']?.toDouble() ?? 2.0),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(component.properties['color1'] ?? 0xFF6366F1),
+                                      Color(component.properties['color2'] ?? 0xFF8B5CF6),
+                                    ],
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                            
+                            if (isTextComponent) ...[
+                              // Typography Section
+                              Text(
+                                'Typography',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Font Size Slider
+                              Text('Font Size: ${fontSize.toInt()}', 
+                                style: TextStyle(fontWeight: FontWeight.w500)),
+                              Slider(
+                                value: fontSize,
+                                min: 8.0,
+                                max: 48.0,
+                                divisions: 40,
+                                label: fontSize.toInt().toString(),
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    fontSize = value;
+                                    component.properties['fontSize'] = value;
+                                  });
+                                  setState(() {}); // Update main UI
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Bold Toggle
+                              CheckboxListTile(
+                                title: Text('Bold'),
+                                value: isBold,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    isBold = value ?? false;
+                                    component.properties['isBold'] = isBold;
+                                  });
+                                  setState(() {}); // Update main UI
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Text Color
+                              Text('Text Color', 
+                                style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () async {
+                                  final newColor = await _showAdvancedColorPicker(
+                                    context,
+                                    textColor,
+                                    'Select Text Color',
+                                  );
+                                  if (newColor != null) {
+                                    setDialogState(() {
+                                      textColor = newColor;
+                                      component.properties['textColor'] = newColor.value;
+                                    });
+                                    setState(() {}); // Update main UI
+                                  }
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    color: textColor,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.color_lens, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Tap to change color',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                            
+                            // Quick Actions
+                            Text(
+                              'Quick Actions',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                _buildPanelPillButton(
+                                  icon: Icons.edit,
+                                  label: 'Edit text',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _handlePropertySelection(component, 'edit_text');
+                                  },
+                                ),
+                                _buildPanelPillButton(
+                                  icon: Icons.auto_fix_high,
+                                  label: 'Typography',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _handlePropertySelection(component, 'text_style');
+                                  },
+                                ),
+                                _buildPanelPillButton(
+                                  icon: Icons.format_align_left,
+                                  label: 'Alignment',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _handlePropertySelection(component, 'text_align');
+                                  },
+                                ),
+                                _buildPanelPillButton(
+                                  icon: Icons.layers,
+                                  label: 'Background',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _handlePropertySelection(component, 'background_style');
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Footer
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(12),
+                          bottomRight: Radius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('Close', style: TextStyle(color: Colors.grey.shade700)),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey.shade600,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _initializeDefaultCanvasState() {
@@ -2263,8 +2710,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     final fontWeight = component.properties['isBold'] == true
         ? FontWeight.bold
         : FontWeight.normal;
-    final colorValue = component.properties['color'] ??
-        component.properties['textColor'] ??
+    // For text components, prefer textColor over color property
+    final colorValue = component.properties['textColor'] ??
+        component.properties['color'] ??
         0xFF000000;
     final fontFamily = component.properties['fontFamily'] is String
         ? component.properties['fontFamily'] as String
@@ -2685,9 +3133,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Widget _buildPropertiesButton(BuilderComponent component) {
-    final bool isPropertiesActive =
-        _isPropertiesPanelVisible && _propertiesPanelComponentId == component.id;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -2705,16 +3150,12 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildToolbarIconButton(
-            icon: Icons.tune,
-            tooltip: isPropertiesActive ? 'Hide properties' : 'Show properties',
+            icon: Icons.palette,
+            tooltip: 'Show properties',
             onTap: () {
-              if (isPropertiesActive) {
-                _closePropertiesPanel();
-              } else {
-                _openPropertiesPanel(component);
-              }
+              _showPropertiesDialog(component);
             },
-            isActive: isPropertiesActive,
+            isActive: false,
             iconColor: Colors.white,
             backgroundColor: Colors.white24,
             activeIconColor: const Color(0xFF512DA8),
@@ -2737,6 +3178,56 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             backgroundColor: const Color(0xFFD32F2F),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCanvasPropertiesButton() {
+    BuilderComponent? selectedComponent;
+    if (_selectedComponentId != null) {
+      try {
+        selectedComponent = _canvasComponents.firstWhere((c) => c.id == _selectedComponentId);
+      } catch (e) {
+        selectedComponent = null;
+      }
+    }
+    
+    return Tooltip(
+      message: selectedComponent != null ? 'Component Properties' : 'Canvas Properties',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () {
+            if (selectedComponent != null) {
+              _showPropertiesDialog(selectedComponent);
+            } else {
+              _showCanvasBackgroundStyleEditor();
+            }
+          },
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: selectedComponent != null 
+                  ? const Color(0xFF673AB7).withOpacity(0.9) // Purple for component properties
+                  : Colors.black.withOpacity(0.7), // Black for canvas properties
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(
+              selectedComponent != null ? Icons.tune : Icons.palette,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2838,54 +3329,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Future<void> _showTextColorPicker(BuilderComponent component) async {
-    const colorOptions = <int>[
-      0xFF000000,
-      0xFF1F2933,
-      0xFF4B5563,
-      0xFF6B7280,
-      0xFF9CA3AF,
-      0xFFFFFFFF,
-      0xFFEF4444,
-      0xFFF59E0B,
-      0xFF10B981,
-      0xFF3B82F6,
-      0xFF8B5CF6,
-      0xFFEC4899,
-    ];
+    final currentColorValue = component.properties['color'] ?? component.properties['textColor'] ?? 0xFF000000;
+    final currentColor = Color(currentColorValue);
 
-    final selectedColor = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Pick text color'),
-        content: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: colorOptions.map((colorValue) {
-            final isSelected = component.properties['color'] == colorValue;
-            return GestureDetector(
-              onTap: () => Navigator.pop(context, colorValue),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Color(colorValue),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
-                    width: isSelected ? 3 : 1,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
+    final Color? selectedColor = await _showAdvancedColorPicker(
+      context,
+      currentColor,
+      'Pick Text Color',
     );
 
     if (!mounted || selectedColor == null) {
@@ -2893,9 +3343,18 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
 
     setState(() {
-      component.properties['color'] = selectedColor;
-      component.properties['textColor'] = selectedColor;
-      _applyFullWidthLayout(component);
+      // Find the component in the main list and update it
+      final componentIndex = _canvasComponents.indexWhere((c) => c.id == component.id);
+      
+      if (componentIndex != -1) {
+        // Only set textColor for text components, this takes precedence
+        _canvasComponents[componentIndex].properties['textColor'] = selectedColor.value;
+        _applyFullWidthLayout(_canvasComponents[componentIndex]);
+      } else {
+        // Fallback to direct component update
+        component.properties['textColor'] = selectedColor.value;
+        _applyFullWidthLayout(component);
+      }
     });
     _updateCanvasSize();
   }
@@ -2926,107 +3385,282 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     double lineHeight = component.properties['lineHeight'] is num
         ? (component.properties['lineHeight'] as num).toDouble()
         : 1.25;
+    
+    // Text shadow properties
+    bool hasShadow = component.properties['hasShadow'] == true;
+    int shadowColor = component.properties['shadowColor'] ?? 0xFF000000;
+    double shadowOffsetX = component.properties['shadowOffsetX'] is num
+        ? (component.properties['shadowOffsetX'] as num).toDouble()
+        : 1.0;
+    double shadowOffsetY = component.properties['shadowOffsetY'] is num
+        ? (component.properties['shadowOffsetY'] as num).toDouble()
+        : 1.0;
+    double shadowBlurRadius = component.properties['shadowBlurRadius'] is num
+        ? (component.properties['shadowBlurRadius'] as num).toDouble()
+        : 2.0;
 
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Typography & effects'),
-            content: SingleChildScrollView(
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SizedBox(
+              width: 400,
+              height: MediaQuery.of(context).size.height * 0.8,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Font size'),
-                  Slider(
-                    value: fontSize.clamp(8.0, 72.0),
-                    min: 8,
-                    max: 72,
-                    divisions: 64,
-                    label: fontSize.toStringAsFixed(0),
-                    onChanged: (value) => setDialogState(() => fontSize = value),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Font family'),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: availableFonts.map((font) {
-                      final bool selected = fontFamily == font;
-                      return ChoiceChip(
-                        label: Text(font),
-                        selected: selected,
-                        onSelected: (value) {
-                          if (value) {
-                            setDialogState(() => fontFamily = font);
-                          }
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      FilterChip(
-                        label: const Text('Bold'),
-                        selected: isBold,
-                        onSelected: (value) => setDialogState(() => isBold = value),
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
                       ),
-                      FilterChip(
-                        label: const Text('Italic'),
-                        selected: isItalic,
-                        onSelected: (value) => setDialogState(() => isItalic = value),
-                      ),
-                      FilterChip(
-                        label: const Text('Underline'),
-                        selected: isUnderline,
-                        onSelected: (value) => setDialogState(() => isUnderline = value),
-                      ),
-                    ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Typography & Effects',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: Icon(Icons.close, color: Colors.grey.shade600),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  const Text('Letter spacing'),
-                  Slider(
-                    value: letterSpacing.clamp(-1.0, 5.0),
-                    min: -1,
-                    max: 5,
-                    divisions: 60,
-                    label: letterSpacing.toStringAsFixed(2),
-                    onChanged: (value) => setDialogState(() => letterSpacing = value),
+                  // Divider
+                  Container(
+                    height: 1,
+                    color: Colors.grey.shade300,
                   ),
-                  const SizedBox(height: 12),
-                  const Text('Line height'),
-                  Slider(
-                    value: lineHeight.clamp(1.0, 3.0),
-                    min: 1.0,
-                    max: 3.0,
-                    divisions: 20,
-                    label: lineHeight.toStringAsFixed(2),
-                    onChanged: (value) => setDialogState(() => lineHeight = value),
+                  // Content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Font size'),
+                          Slider(
+                            value: fontSize.clamp(8.0, 72.0),
+                            min: 8,
+                            max: 72,
+                            divisions: 64,
+                            label: fontSize.toStringAsFixed(0),
+                            onChanged: (value) => setDialogState(() => fontSize = value),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('Font family'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: availableFonts.map((font) {
+                              final bool selected = fontFamily == font;
+                              return ChoiceChip(
+                                label: Text(font),
+                                selected: selected,
+                                onSelected: (value) {
+                                  if (value) {
+                                    setDialogState(() => fontFamily = font);
+                                  }
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 12,
+                            children: [
+                              FilterChip(
+                                label: const Text('Bold'),
+                                selected: isBold,
+                                onSelected: (value) => setDialogState(() => isBold = value),
+                              ),
+                              FilterChip(
+                                label: const Text('Italic'),
+                                selected: isItalic,
+                                onSelected: (value) => setDialogState(() => isItalic = value),
+                              ),
+                              FilterChip(
+                                label: const Text('Underline'),
+                                selected: isUnderline,
+                                onSelected: (value) => setDialogState(() => isUnderline = value),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text('Letter spacing'),
+                          Slider(
+                            value: letterSpacing.clamp(-1.0, 5.0),
+                            min: -1,
+                            max: 5,
+                            divisions: 60,
+                            label: letterSpacing.toStringAsFixed(2),
+                            onChanged: (value) => setDialogState(() => letterSpacing = value),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('Line height'),
+                          Slider(
+                            value: lineHeight.clamp(1.0, 3.0),
+                            min: 1.0,
+                            max: 3.0,
+                            divisions: 20,
+                            label: lineHeight.toStringAsFixed(2),
+                            onChanged: (value) => setDialogState(() => lineHeight = value),
+                          ),
+                          const SizedBox(height: 16),
+                          // Text Shadow Section
+                          Row(
+                            children: [
+                              Text('Text Shadow', style: TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: hasShadow,
+                                onChanged: (value) => setDialogState(() => hasShadow = value),
+                              ),
+                            ],
+                          ),
+                          if (hasShadow) ...[
+                            const SizedBox(height: 12),
+                            const Text('Shadow Color', style: TextStyle(fontSize: 12)),
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () async {
+                                final Color? newColor = await _showAdvancedColorPicker(
+                                  context,
+                                  Color(shadowColor),
+                                  'Select Shadow Color',
+                                );
+                                if (newColor != null) {
+                                  setDialogState(() => shadowColor = newColor.value);
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Color(shadowColor),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.palette,
+                                      color: Color(shadowColor).computeLuminance() > 0.5 
+                                          ? Colors.black54 
+                                          : Colors.white70,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Tap to choose color',
+                                      style: TextStyle(
+                                        color: Color(shadowColor).computeLuminance() > 0.5 
+                                            ? Colors.black 
+                                            : Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text('Horizontal Offset: ${shadowOffsetX.toStringAsFixed(1)}px'),
+                            Slider(
+                              value: shadowOffsetX.clamp(-10.0, 10.0),
+                              min: -10,
+                              max: 10,
+                              divisions: 40,
+                              onChanged: (value) => setDialogState(() => shadowOffsetX = value),
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Vertical Offset: ${shadowOffsetY.toStringAsFixed(1)}px'),
+                            Slider(
+                              value: shadowOffsetY.clamp(-10.0, 10.0),
+                              min: -10,
+                              max: 10,
+                              divisions: 40,
+                              onChanged: (value) => setDialogState(() => shadowOffsetY = value),
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Blur Radius: ${shadowBlurRadius.toStringAsFixed(1)}px'),
+                            Slider(
+                              value: shadowBlurRadius.clamp(0.0, 20.0),
+                              min: 0,
+                              max: 20,
+                              divisions: 40,
+                              onChanged: (value) => setDialogState(() => shadowBlurRadius = value),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Footer
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop<Map<String, dynamic>>(context, {
+                            'fontSize': fontSize,
+                            'fontFamily': fontFamily,
+                            'isBold': isBold,
+                            'isItalic': isItalic,
+                            'isUnderline': isUnderline,
+                            'letterSpacing': letterSpacing,
+                            'lineHeight': lineHeight,
+                            'hasShadow': hasShadow,
+                            'shadowColor': shadowColor,
+                            'shadowOffsetX': shadowOffsetX,
+                            'shadowOffsetY': shadowOffsetY,
+                            'shadowBlurRadius': shadowBlurRadius,
+                          }),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade600,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Apply'),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop<Map<String, dynamic>>(context, {
-                  'fontSize': fontSize,
-                  'fontFamily': fontFamily,
-                  'isBold': isBold,
-                  'isItalic': isItalic,
-                  'isUnderline': isUnderline,
-                  'letterSpacing': letterSpacing,
-                  'lineHeight': lineHeight,
-                }),
-                child: const Text('Apply'),
-              ),
-            ],
           );
         },
       ),
@@ -3051,31 +3685,98 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     final String current = component.properties['textAlign']?.toString() ?? 'left';
 
-    final String? selection = await showModalBottomSheet<String>(
+    final String? selection = await showDialog<String>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'Text alignment',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Text Alignment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: Colors.grey.shade600),
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            ...options.map((option) {
-              final bool selected = current == option['value'];
-              return ListTile(
-                leading: Icon(option['icon'] as IconData,
-                    color: selected ? const Color(0xFF673AB7) : null),
-                title: Text(option['label'] as String),
-                trailing: selected ? const Icon(Icons.check, color: Color(0xFF673AB7)) : null,
-                onTap: () => Navigator.pop(context, option['value'] as String),
-              );
-            }).toList(),
-            const SizedBox(height: 12),
-          ],
+              // Divider
+              Container(
+                height: 1,
+                color: Colors.grey.shade300,
+              ),
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: options.map((option) {
+                    final bool selected = current == option['value'];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: Icon(option['icon'] as IconData,
+                            color: selected ? const Color(0xFF673AB7) : Colors.grey.shade600),
+                        title: Text(option['label'] as String),
+                        trailing: selected ? const Icon(Icons.check, color: Color(0xFF673AB7)) : null,
+                        onTap: () => Navigator.pop(context, option['value'] as String),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tileColor: selected ? const Color(0xFF673AB7).withOpacity(0.1) : null,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              // Footer
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3090,36 +3791,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Future<void> _showBackgroundStyleEditor(BuilderComponent component) async {
-    const colorOptions = <int>[
-      0x00000000,
-      0xFFFFFFFF,
-      0xFFF7F7F7,
-      0xFFE3F2FD,
-      0xFFE8F5E9,
-      0xFFFFF3E0,
-      0xFFFCE4EC,
-      0xFF1F2933,
-      0xFF4B5563,
-      0xFF8B5CF6,
-      0xFF3B82F6,
-      0xFF10B981,
-      0xFFF59E0B,
-      0xFFEF4444,
-    ];
-
-    // Pre-defined gradient options (light and dark)
-    const gradientOptions = <Map<String, int>>[
-      // Light gradients
-      {'start': 0xFFE3F2FD, 'end': 0xFFBBDEFB}, // Light blue
-      {'start': 0xFFE8F5E9, 'end': 0xFFC8E6C9}, // Light green  
-      {'start': 0xFFFFF3E0, 'end': 0xFFFFE0B2}, // Light orange
-      {'start': 0xFFFCE4EC, 'end': 0xFFF8BBD9}, // Light pink
-      // Dark gradients
-      {'start': 0xFF1565C0, 'end': 0xFF0D47A1}, // Dark blue
-      {'start': 0xFF2E7D32, 'end': 0xFF1B5E20}, // Dark green
-      {'start': 0xFF673AB7, 'end': 0xFF4527A0}, // Dark purple
-      {'start': 0xFFE91E63, 'end': 0xFFC2185B}, // Dark pink
-    ];
 
     int? backgroundColor = component.properties['backgroundColor'] is int
         ? component.properties['backgroundColor'] as int
@@ -3151,6 +3822,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
             child: Container(
               constraints: const BoxConstraints(
@@ -3162,24 +3837,39 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 children: [
                   // Header
                   Container(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                    ),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Background & border',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        Text(
+                          'Background & Border',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
                           ),
                         ),
                         IconButton(
                           onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close, size: 20),
-                          visualDensity: VisualDensity.compact,
+                          icon: Icon(Icons.close, color: Colors.grey.shade600),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1),
+                  // Divider
+                  Container(
+                    height: 1,
+                    color: Colors.grey.shade300,
+                  ),
                   // Scrollable content
                   Expanded(
                     child: SingleChildScrollView(
@@ -3190,39 +3880,61 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                         children: [
                           const Text('Background color'),
                           if (!useGradient) ...[
+                            const SizedBox(height: 8),
+                            const Text('Background Color', style: TextStyle(fontSize: 12)),
                             const SizedBox(height: 4),
-                            const Text('Choose color:', style: TextStyle(fontSize: 11)),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: colorOptions.map((colorValue) {
-                                final bool isSelected = backgroundColor == colorValue;
-                                return GestureDetector(
-                                  onTap: () => setDialogState(() => backgroundColor = colorValue),
-                                  child: Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      color: Color(colorValue),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
-                                        width: isSelected ? 2.5 : 1,
+                            GestureDetector(
+                              onTap: () async {
+                                final Color? newColor = await _showAdvancedColorPicker(
+                                  context,
+                                  backgroundColor != null ? Color(backgroundColor!) : Colors.white,
+                                  'Select Background Color',
+                                );
+                                if (newColor != null) {
+                                  setDialogState(() => backgroundColor = newColor.value);
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: backgroundColor != null ? Color(backgroundColor!) : Colors.white,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.palette,
+                                      color: backgroundColor != null
+                                          ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black54 : Colors.white70)
+                                          : Colors.black54,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Tap to choose color',
+                                      style: TextStyle(
+                                        color: backgroundColor != null
+                                            ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black : Colors.white)
+                                            : Colors.black,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                  ),
-                                );
-                              }).toList(),
+                                  ],
+                                ),
+                              ),
                             ),
                             const SizedBox(height: 6),
-                            TextButton.icon(
+                            ElevatedButton.icon(
                               onPressed: () => setDialogState(() => backgroundColor = null),
                               icon: const Icon(Icons.clear, size: 14),
                               label: const Text('Remove', style: TextStyle(fontSize: 11)),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                minimumSize: const Size(0, 24),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               ),
                             ),
                           ],
@@ -3236,48 +3948,133 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                           ),
                           if (useGradient) ...[
                             const SizedBox(height: 4),
-                            const Text('Select gradient:', style: TextStyle(fontSize: 12)),
-                            const SizedBox(height: 6),
-                            Column(
-                              children: gradientOptions.map((gradient) {
-                                final bool isSelected = gradientStart == gradient['start'] && gradientEnd == gradient['end'];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setDialogState(() {
-                                        gradientStart = gradient['start']!;
-                                        gradientEnd = gradient['end']!;
-                                      });
-                                    },
-                                    child: Container(
-                                      width: double.infinity,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [Color(gradient['start']!), Color(gradient['end']!)],
-                                        ),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
-                                          width: isSelected ? 2 : 1,
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          isSelected ? '✓ Selected' : 'Tap to select',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w500,
-                                            shadows: [Shadow(color: Colors.black54, offset: Offset(0, 1))],
+                            const Text('Gradient Colors:', style: TextStyle(fontSize: 12)),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                // Start Color Picker
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Start Color', style: TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final Color? newColor = await _showAdvancedColorPicker(
+                                            context,
+                                            Color(gradientStart),
+                                            'Select Start Color',
+                                          );
+                                          if (newColor != null) {
+                                            setDialogState(() => gradientStart = newColor.value);
+                                          }
+                                        },
+                                        child: Container(
+                                          width: double.infinity,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Color(gradientStart),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                          ),
+                                          child: Icon(
+                                            Icons.palette,
+                                            color: Color(gradientStart).computeLuminance() > 0.5 
+                                                ? Colors.black54 
+                                                : Colors.white70,
                                           ),
                                         ),
                                       ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // End Color Picker
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('End Color', style: TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final Color? newColor = await _showAdvancedColorPicker(
+                                            context,
+                                            Color(gradientEnd),
+                                            'Select End Color',
+                                          );
+                                          if (newColor != null) {
+                                            setDialogState(() => gradientEnd = newColor.value);
+                                          }
+                                        },
+                                        child: Container(
+                                          width: double.infinity,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Color(gradientEnd),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                          ),
+                                          child: Icon(
+                                            Icons.palette,
+                                            color: Color(gradientEnd).computeLuminance() > 0.5 
+                                                ? Colors.black54 
+                                                : Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        final temp = gradientStart;
+                                        gradientStart = gradientEnd;
+                                        gradientEnd = temp;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.swap_horiz, size: 16),
+                                    label: const Text('Swap Colors', style: TextStyle(fontSize: 11)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey.shade600,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     ),
                                   ),
-                                );
-                              }).toList(),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 30,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(gradientStart), Color(gradientEnd)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Gradient Preview',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    shadows: [Shadow(color: Colors.black54, offset: Offset(0, 1))],
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                           const SizedBox(height: 8),
@@ -3300,28 +4097,50 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                               onChanged: (value) => setDialogState(() => borderWidth = value),
                             ),
                             const SizedBox(height: 6),
-                            const Text('Border color', style: TextStyle(fontSize: 12)),
-                            Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: colorOptions.map((colorValue) {
-                                final bool isSelected = borderColor == colorValue;
-                                return GestureDetector(
-                                  onTap: () => setDialogState(() => borderColor = colorValue),
-                                  child: Container(
-                                    width: 20,
-                                    height: 20,
-                                    decoration: BoxDecoration(
-                                      color: Color(colorValue),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
-                                        width: isSelected ? 2 : 1,
+                            const Text('Border Color', style: TextStyle(fontSize: 12)),
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () async {
+                                final Color? newColor = await _showAdvancedColorPicker(
+                                  context,
+                                  Color(borderColor),
+                                  'Select Border Color',
+                                );
+                                if (newColor != null) {
+                                  setDialogState(() => borderColor = newColor.value);
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: Color(borderColor),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.border_color,
+                                      color: Color(borderColor).computeLuminance() > 0.5 
+                                          ? Colors.black54 
+                                          : Colors.white70,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Tap to choose border color',
+                                      style: TextStyle(
+                                        color: Color(borderColor).computeLuminance() > 0.5 
+                                            ? Colors.black 
+                                            : Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                  ),
-                                );
-                              }).toList(),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                           const SizedBox(height: 6),
@@ -3350,16 +4169,20 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                   ),
                   // Actions
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
                           onPressed: () => Navigator.of(dialogContext).pop(),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          ),
-                          child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+                          child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
@@ -3377,11 +4200,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                             });
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF673AB7),
+                            backgroundColor: Colors.grey.shade600,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                           ),
-                          child: const Text('Apply', style: TextStyle(fontSize: 13)),
+                          child: const Text('Apply'),
                         ),
                       ],
                     ),
@@ -3443,24 +4265,39 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 children: [
                   // Header
                   Container(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                    ),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Canvas Background',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        Text(
+                          'Canvas Background',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
                           ),
                         ),
                         IconButton(
                           onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close, size: 20),
-                          visualDensity: VisualDensity.compact,
+                          icon: Icon(Icons.close, size: 18, color: Colors.grey.shade600),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(minWidth: 24, minHeight: 24),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1),
+                  // Divider
+                  Container(
+                    height: 1,
+                    color: Colors.grey.shade300,
+                  ),
                   // Scrollable content
                   Expanded(
                     child: SingleChildScrollView(
@@ -3666,22 +4503,115 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                               ),
                             ),
                           ],
+                          
+                          // Border Section
+                          const SizedBox(height: 24),
+                          Text(
+                            'Border Style',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          
+                          // Border Color
+                          Text('Border Color', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final Color? newColor = await _showAdvancedColorPicker(
+                                context,
+                                canvasBorderColor,
+                                'Select Border Color',
+                              );
+                              if (newColor != null) {
+                                setDialogState(() => canvasBorderColor = newColor);
+                              }
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: canvasBorderColor,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.border_color,
+                                    color: canvasBorderColor.computeLuminance() > 0.5 
+                                        ? Colors.black54 
+                                        : Colors.white70,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Tap to choose border color',
+                                    style: TextStyle(
+                                      color: canvasBorderColor.computeLuminance() > 0.5 
+                                          ? Colors.black 
+                                          : Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          // Border Width
+                          Text('Border Width: ${canvasBorderWidth.toInt()}px', 
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          Slider(
+                            value: canvasBorderWidth,
+                            min: 0.0,
+                            max: 10.0,
+                            divisions: 20,
+                            label: '${canvasBorderWidth.toInt()}px',
+                            onChanged: (value) {
+                              setDialogState(() => canvasBorderWidth = value);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          
+                          // Border Radius
+                          Text('Border Radius: ${canvasBorderRadius.toInt()}px', 
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          Slider(
+                            value: canvasBorderRadius,
+                            min: 0.0,
+                            max: 50.0,
+                            divisions: 25,
+                            label: '${canvasBorderRadius.toInt()}px',
+                            onChanged: (value) {
+                              setDialogState(() => canvasBorderRadius = value);
+                            },
+                          ),
                         ],
                       ),
                     ),
                   ),
-                  // Actions
+                  // Footer
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
                           onPressed: () => Navigator.of(dialogContext).pop(),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          ),
-                          child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+                          child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
@@ -3691,14 +4621,16 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                               'useGradient': useGradient,
                               'gradientStart': useGradient ? gradientStart : null,
                               'gradientEnd': useGradient ? gradientEnd : null,
+                              'borderColor': canvasBorderColor.value,
+                              'borderWidth': canvasBorderWidth,
+                              'borderRadius': canvasBorderRadius,
                             });
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF673AB7),
+                            backgroundColor: Colors.grey.shade600,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                           ),
-                          child: const Text('Apply', style: TextStyle(fontSize: 13)),
+                          child: const Text('Apply'),
                         ),
                       ],
                     ),
@@ -3733,6 +4665,17 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         canvasBackgroundColor = Color(resultMap['backgroundColor'] as int? ?? 0xFFFFFFFF);
         canvasBackgroundGradient = null;
         _selectedBackgroundPresetId = 'custom_solid';
+      }
+      
+      // Apply border properties
+      if (resultMap['borderColor'] != null) {
+        canvasBorderColor = Color(resultMap['borderColor'] as int);
+      }
+      if (resultMap['borderWidth'] != null) {
+        canvasBorderWidth = resultMap['borderWidth'] as double;
+      }
+      if (resultMap['borderRadius'] != null) {
+        canvasBorderRadius = resultMap['borderRadius'] as double;
       }
     });
   }
@@ -3843,21 +4786,30 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           'isBold': false,
           'isItalic': false,
           'isUnderline': false,
-          'fontFamily': 'Roboto',
+          'fontFamily': 'Poppins', // Changed to Poppins
           'letterSpacing': 0.0,
           'lineHeight': 1.35,
           'textAlign': 'left',
           'padding': 12.0,
           'borderRadius': 12.0,
-          'borderWidth': 1.0,
+          'borderWidth': 0.0, // No border
           'borderColor': 0xFFE0E0E0,
-          'showBorder': true,
-          'backgroundColor': 0xFFF7F7F7,
+          'showBorder': false, // No border
+          'backgroundColor': 0x00000000, // Transparent background
           'autoHeight': true,
           'widthFit': true,
         };
       case ComponentType.dateContainer:
         return {'selectedDate': DateTime.now().millisecondsSinceEpoch};
+      case ComponentType.gradientDivider:
+        return {
+          'color1': 0xFF6366F1, // Modern indigo
+          'color2': 0xFF8B5CF6, // Modern purple
+          'height': 4.0,
+          'width': 200.0,
+          'cornerRadius': 2.0,
+          'padding': 0.0, // No padding
+        };
       default:
         return {};
     }
@@ -3871,6 +4823,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         return 72.0;
       case ComponentType.dateContainer:
         return 60.0;
+      case ComponentType.gradientDivider:
+        return 24.0; // Larger clickable area
       case ComponentType.imageContainer:
         return 180.0;
       case ComponentType.iconContainer:
@@ -4698,7 +5652,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
   }
 
-  /// Shows an advanced color picker dialog with only square color blocks
+  /// Shows an advanced HSV color picker dialog with square color area
   Future<Color?> _showAdvancedColorPicker(
     BuildContext context,
     Color initialColor,
@@ -4706,190 +5660,46 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   ) async {
     Color selectedColor = initialColor;
 
-    // Comprehensive color palette with square blocks only
-    final List<Color> colorPalette = [
-      // Whites and Grays
-      Colors.white, const Color(0xFFF5F5F5), const Color(0xFFEEEEEE), const Color(0xFFE0E0E0),
-      const Color(0xFFBDBDBD), const Color(0xFF9E9E9E), const Color(0xFF757575), const Color(0xFF616161),
-      const Color(0xFF424242), const Color(0xFF212121), Colors.black,
-      
-      // Reds
-      const Color(0xFFFFEBEE), const Color(0xFFFFCDD2), const Color(0xFFEF9A9A), const Color(0xFFE57373),
-      const Color(0xFFEF5350), const Color(0xFFF44336), const Color(0xFFE53935), const Color(0xFFD32F2F),
-      const Color(0xFFC62828), const Color(0xFFB71C1C), const Color(0xFFFF5722),
-      
-      // Pinks
-      const Color(0xFFFCE4EC), const Color(0xFFF8BBD9), const Color(0xFFF48FB1), const Color(0xFFF06292),
-      const Color(0xFFEC407A), const Color(0xFFE91E63), const Color(0xFFD81B60), const Color(0xFFC2185B),
-      const Color(0xFFAD1457), const Color(0xFF880E4F),
-      
-      // Purples
-      const Color(0xFFF3E5F5), const Color(0xFFE1BEE7), const Color(0xFFCE93D8), const Color(0xFFBA68C8),
-      const Color(0xFFAB47BC), const Color(0xFF9C27B0), const Color(0xFF8E24AA), const Color(0xFF7B1FA2),
-      const Color(0xFF6A1B9A), const Color(0xFF4A148C), const Color(0xFF673AB7),
-      
-      // Blues
-      const Color(0xFFE3F2FD), const Color(0xFFBBDEFB), const Color(0xFF90CAF9), const Color(0xFF64B5F6),
-      const Color(0xFF42A5F5), const Color(0xFF2196F3), const Color(0xFF1E88E5), const Color(0xFF1976D2),
-      const Color(0xFF1565C0), const Color(0xFF0D47A1), const Color(0xFF03A9F4),
-      
-      // Cyans
-      const Color(0xFFE0F2F1), const Color(0xFFB2DFDB), const Color(0xFF80CBC4), const Color(0xFF4DB6AC),
-      const Color(0xFF26A69A), const Color(0xFF009688), const Color(0xFF00897B), const Color(0xFF00796B),
-      const Color(0xFF00695C), const Color(0xFF004D40), const Color(0xFF00BCD4),
-      
-      // Greens
-      const Color(0xFFE8F5E8), const Color(0xFFC8E6C9), const Color(0xFFA5D6A7), const Color(0xFF81C784),
-      const Color(0xFF66BB6A), const Color(0xFF4CAF50), const Color(0xFF43A047), const Color(0xFF388E3C),
-      const Color(0xFF2E7D32), const Color(0xFF1B5E20), const Color(0xFF8BC34A),
-      
-      // Yellows
-      const Color(0xFFFFFDE7), const Color(0xFFFFF9C4), const Color(0xFFFFF59D), const Color(0xFFFFF176),
-      const Color(0xFFFFEE58), const Color(0xFFFFEB3B), const Color(0xFFFDD835), const Color(0xFFFBC02D),
-      const Color(0xFFF9A825), const Color(0xFFF57F17), const Color(0xFFFFc107),
-      
-      // Oranges
-      const Color(0xFFFFF3E0), const Color(0xFFFFE0B2), const Color(0xFFFFCC80), const Color(0xFFFFB74D),
-      const Color(0xFFFFA726), const Color(0xFFFF9800), const Color(0xFFFB8C00), const Color(0xFFF57C00),
-      const Color(0xFFEF6C00), const Color(0xFFE65100),
-    ];
-
     return showDialog<Color>(
       context: context,
       builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Dialog(
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
-              child: Container(
-                constraints: const BoxConstraints(
-                  maxWidth: 340,
-                  maxHeight: 420,
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(null),
-                          icon: const Icon(Icons.close, size: 18),
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // Selected color preview
-                    Container(
-                      width: double.infinity,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: selectedColor,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.grey.shade300, width: 0.5),
-                      ),
-                      child: Center(
-                        child: Text(
-                          '#${selectedColor.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
-                          style: TextStyle(
-                            color: selectedColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Square color grid
-                    Expanded(
-                      child: GridView.builder(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 8,
-                          crossAxisSpacing: 4,
-                          mainAxisSpacing: 4,
-                        ),
-                        itemCount: colorPalette.length,
-                        itemBuilder: (context, index) {
-                          final color = colorPalette[index];
-                          final isSelected = color.value == selectedColor.value;
-                          return GestureDetector(
-                            onTap: () => setState(() => selectedColor = color),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: color,
-                                borderRadius: BorderRadius.circular(2), // Slightly rounded square
-                                border: Border.all(
-                                  color: isSelected ? Colors.black : Colors.grey.shade400,
-                                  width: isSelected ? 2 : 0.5,
-                                ),
-                                boxShadow: isSelected
-                                    ? [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.3),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ]
-                                    : null,
-                              ),
-                              child: isSelected
-                                  ? const Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 16,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black,
-                                          blurRadius: 2,
-                                        ),
-                                      ],
-                                    )
-                                  : null,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Actions
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(null),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            minimumSize: const Size(0, 28),
-                          ),
-                          child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(selectedColor),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF673AB7),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            minimumSize: const Size(0, 28),
-                          ),
-                          child: const Text('Select', style: TextStyle(fontSize: 12)),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+        return AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 300,
+              height: 400,
+              child: ColorPicker(
+                pickerColor: selectedColor,
+                onColorChanged: (Color color) {
+                  selectedColor = color;
+                },
+                displayThumbColor: true,
+                enableAlpha: false,
+                pickerAreaHeightPercent: 0.8,
+                labelTypes: const [],
+                paletteType: PaletteType.hsv,
               ),
-            );
-          },
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop(null);
+              },
+            ),
+            ElevatedButton(
+              child: const Text('Select'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade600,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(context).pop(selectedColor);
+              },
+            ),
+          ],
         );
       },
     );

@@ -1,8 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'color_picker_dialog.dart';
+
+// Helper function for HSV color picker
+Future<Color?> _showHSVColorPicker(
+  BuildContext context,
+  Color currentColor,
+  String title,
+) async {
+  Color selectedColor = currentColor;
+  
+  return await showDialog<Color>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: SingleChildScrollView(
+        child: ColorPicker(
+          pickerColor: currentColor,
+          onColorChanged: (color) => selectedColor = color,
+          pickerAreaHeightPercent: 0.8,
+          enableAlpha: false,
+          displayThumbColor: true,
+          paletteType: PaletteType.hsv,
+          labelTypes: const [],
+          pickerAreaBorderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(selectedColor),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.grey.shade600,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Select'),
+        ),
+      ],
+    ),
+  );
+}
 
 // Helper function to get Google Fonts TextStyle
 TextStyle _getGoogleFontStyle(String fontFamily) {
@@ -543,6 +586,13 @@ class TextLabelComponent extends DraggableComponent {
     final backgroundColor = Color(properties['backgroundColor'] ?? Colors.transparent.value);
     final alignment = properties['alignment'] ?? 'center';
     final fontFamily = properties['fontFamily'] ?? 'Default';
+    
+    // Text shadow properties
+    final hasShadow = properties['hasShadow'] == true;
+    final shadowColor = Color(properties['shadowColor'] ?? 0xFF000000);
+    final shadowOffsetX = properties['shadowOffsetX']?.toDouble() ?? 1.0;
+    final shadowOffsetY = properties['shadowOffsetY']?.toDouble() ?? 1.0;
+    final shadowBlurRadius = properties['shadowBlurRadius']?.toDouble() ?? 2.0;
 
     TextAlign textAlign;
     switch (alignment) {
@@ -570,6 +620,15 @@ class TextLabelComponent extends DraggableComponent {
           fontSize: fontSize,
           fontWeight: fontWeight,
           color: textColor,
+          shadows: hasShadow
+              ? [
+                  Shadow(
+                    color: shadowColor,
+                    offset: Offset(shadowOffsetX, shadowOffsetY),
+                    blurRadius: shadowBlurRadius,
+                  ),
+                ]
+              : null,
         ),
         textAlign: textAlign,
         maxLines: 2,
@@ -753,6 +812,13 @@ class TextBoxComponent extends DraggableComponent {
     final double borderRadius = properties['borderRadius']?.toDouble() ?? 8.0;
     final double lineHeight = properties['lineHeight']?.toDouble() ?? 1.4;
     final double letterSpacing = properties['letterSpacing']?.toDouble() ?? 0.0;
+    
+    // Text shadow properties
+    final hasShadow = properties['hasShadow'] == true;
+    final shadowColor = Color(properties['shadowColor'] ?? 0xFF000000);
+    final shadowOffsetX = properties['shadowOffsetX']?.toDouble() ?? 1.0;
+    final shadowOffsetY = properties['shadowOffsetY']?.toDouble() ?? 1.0;
+    final shadowBlurRadius = properties['shadowBlurRadius']?.toDouble() ?? 2.0;
 
     FontWeight fontWeight;
     switch (fontWeightKey) {
@@ -802,6 +868,15 @@ class TextBoxComponent extends DraggableComponent {
             fontWeight: fontWeight,
             height: lineHeight,
             letterSpacing: letterSpacing,
+            shadows: hasShadow
+                ? [
+                    Shadow(
+                      color: shadowColor,
+                      offset: Offset(shadowOffsetX, shadowOffsetY),
+                      blurRadius: shadowBlurRadius,
+                    ),
+                  ]
+                : null,
           ),
           textAlign: textAlign,
         ),
@@ -881,13 +956,59 @@ class TextBoxComponent extends DraggableComponent {
 
     return StatefulBuilder(
       builder: (context, setState) {
-        return AlertDialog(
-          title: const Text('Edit Text Box'),
-          content: SingleChildScrollView(
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: SizedBox(
+            width: 400,
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Edit Text Box',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: Icon(Icons.close, color: Colors.grey.shade600),
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ),
+                // Divider
+                Container(
+                  height: 1,
+                  color: Colors.grey.shade300,
+                ),
+                // Content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                 TextField(
                   controller: textController,
                   decoration: const InputDecoration(
@@ -1127,36 +1248,59 @@ class TextBoxComponent extends DraggableComponent {
                     ),
                   ],
                 ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Actions
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          onUpdate({
+                            'text': textController.text,
+                            'fontSize': fontSize,
+                            'padding': padding,
+                            'borderWidth': borderWidth,
+                            'borderRadius': borderRadius,
+                            'lineHeight': lineHeight,
+                            'letterSpacing': letterSpacing,
+                            'fontFamily': fontFamily,
+                            'fontWeight': fontWeight,
+                            'textAlign': textAlign,
+                            'textColor': textColor.value,
+                            'backgroundColor': backgroundColor.value,
+                            'borderColor': borderColor.value,
+                          });
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade600,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Update'),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                onUpdate({
-                  'text': textController.text,
-                  'fontSize': fontSize,
-                  'padding': padding,
-                  'borderWidth': borderWidth,
-                  'borderRadius': borderRadius,
-                  'lineHeight': lineHeight,
-                  'letterSpacing': letterSpacing,
-                  'fontFamily': fontFamily,
-                  'fontWeight': fontWeight,
-                  'textAlign': textAlign,
-                  'textColor': textColor.value,
-                  'backgroundColor': backgroundColor.value,
-                  'borderColor': borderColor.value,
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('Update'),
-            ),
-          ],
         );
       },
     );
@@ -1437,6 +1581,10 @@ class ColoredContainerComponent extends DraggableComponent {
                 });
                 Navigator.pop(context);
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade600,
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Update'),
             ),
           ],
@@ -1576,6 +1724,10 @@ class ImageContainerComponent extends DraggableComponent {
             });
             Navigator.pop(context);
           },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.grey.shade600,
+            foregroundColor: Colors.white,
+          ),
           child: const Text('Update'),
         ),
       ],
@@ -1769,6 +1921,10 @@ class IconContainerComponent extends DraggableComponent {
                 });
                 Navigator.pop(context);
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade600,
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Update'),
             ),
           ],
@@ -1806,7 +1962,22 @@ class GradientDividerComponent extends DraggableComponent {
     required double x,
     required double y,
     Map<String, dynamic>? properties,
-  }) : super(id: id, x: x, y: y, width: 200, height: 4, properties: properties ?? {}, type: ComponentType.gradientDivider);
+  }) : super(
+          id: id, 
+          x: x, 
+          y: y, 
+          width: 200, 
+          height: 4, 
+          properties: properties ?? {
+            'color1': 0xFF6366F1, // Modern indigo
+            'color2': 0xFF8B5CF6, // Modern purple
+            'height': 4.0,
+            'width': 200.0,
+            'cornerRadius': 2.0,
+            'padding': 0.0, // No padding
+          }, 
+          type: ComponentType.gradientDivider,
+        );
 
   @override
   ComponentType get type => ComponentType.gradientDivider;
@@ -1931,10 +2102,10 @@ class GradientDividerComponent extends DraggableComponent {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () async {
-                                final newColor = await showColorPickerDialog(
-                                  context: context,
-                                  initialColor: color1,
-                                  title: 'Select Start Color',
+                                final newColor = await _showHSVColorPicker(
+                                  context,
+                                  color1,
+                                  'Select Start Color',
                                 );
                                 if (newColor != null) {
                                   setState(() {
@@ -1964,10 +2135,10 @@ class GradientDividerComponent extends DraggableComponent {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () async {
-                                final newColor = await showColorPickerDialog(
-                                  context: context,
-                                  initialColor: color2,
-                                  title: 'Select End Color',
+                                final newColor = await _showHSVColorPicker(
+                                  context,
+                                  color2,
+                                  'Select End Color',
                                 );
                                 if (newColor != null) {
                                   setState(() {
@@ -2015,6 +2186,10 @@ class GradientDividerComponent extends DraggableComponent {
                 });
                 Navigator.pop(context);
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade600,
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Update'),
             ),
           ],
