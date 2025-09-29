@@ -1,7 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'color_picker_dialog.dart';
+
+// Helper function to get Google Fonts TextStyle
+TextStyle _getGoogleFontStyle(String fontFamily) {
+  try {
+    switch (fontFamily.toLowerCase()) {
+      case 'roboto':
+        return GoogleFonts.roboto();
+      case 'poppins':
+        return GoogleFonts.poppins();
+      case 'lato':
+        return GoogleFonts.lato();
+      case 'nunito':
+        return GoogleFonts.nunito();
+      case 'montserrat':
+        return GoogleFonts.montserrat();
+      case 'open sans':
+        return GoogleFonts.openSans();
+      case 'merriweather':
+        return GoogleFonts.merriweather();
+      case 'default':
+      default:
+        return GoogleFonts.roboto();
+    }
+  } catch (e) {
+    // Fallback to system font if Google Fonts fails
+    return const TextStyle();
+  }
+}
 
 // Enum for component types
 enum ComponentType {
@@ -501,6 +530,7 @@ class TextLabelComponent extends DraggableComponent {
             'textColor': Colors.black87.value,
             'backgroundColor': Colors.transparent.value,
             'alignment': 'center',
+            'fontFamily': 'Default',
           },
         );
 
@@ -512,6 +542,7 @@ class TextLabelComponent extends DraggableComponent {
     final textColor = Color(properties['textColor'] ?? Colors.black87.value);
     final backgroundColor = Color(properties['backgroundColor'] ?? Colors.transparent.value);
     final alignment = properties['alignment'] ?? 'center';
+    final fontFamily = properties['fontFamily'] ?? 'Default';
 
     TextAlign textAlign;
     switch (alignment) {
@@ -535,7 +566,7 @@ class TextLabelComponent extends DraggableComponent {
       alignment: Alignment.center,
       child: Text(
         text,
-        style: TextStyle(
+        style: _getGoogleFontStyle(fontFamily).copyWith(
           fontSize: fontSize,
           fontWeight: fontWeight,
           color: textColor,
@@ -765,10 +796,9 @@ class TextBoxComponent extends DraggableComponent {
       child: SingleChildScrollView(
         child: Text(
           text,
-          style: TextStyle(
+          style: _getGoogleFontStyle(fontFamily).copyWith(
             fontSize: fontSize,
             color: textColor,
-            fontFamily: fontFamily == 'Default' ? null : fontFamily,
             fontWeight: fontWeight,
             height: lineHeight,
             letterSpacing: letterSpacing,
@@ -892,10 +922,9 @@ class TextBoxComponent extends DraggableComponent {
                           return TextAlign.left;
                       }
                     }(),
-                    style: TextStyle(
+                    style: _getGoogleFontStyle(fontFamily).copyWith(
                       fontSize: fontSize,
                       color: textColor,
-                      fontFamily: fontFamily == 'Default' ? null : fontFamily,
                       height: lineHeight,
                       letterSpacing: letterSpacing,
                       fontWeight: () {

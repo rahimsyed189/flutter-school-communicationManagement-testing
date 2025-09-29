@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flex_color_picker/flex_color_picker.dart' hide showColorPickerDialog;
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'widgets/draggable_template_components.dart';
 import 'widgets/color_picker_dialog.dart';
 
@@ -377,6 +378,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           } else {
             // Mobile Layout - Vertical with bottom drawer
             return Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 
                 // Canvas Area (Mobile)
@@ -508,11 +510,64 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
-              height: _isPanelExpanded ? 100 : 0,
+              height: _isPanelExpanded ? 140 : 0,
               child: SingleChildScrollView(
                 child: Container(
                   padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-                  child: _buildMobileHorizontalComponentsList(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Canvas Properties button
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _showCanvasBackgroundStyleEditor(),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF5E35B1), Color(0xFF673AB7)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF5E35B1).withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.palette,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'Canvas Properties',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildMobileHorizontalComponentsList(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -852,9 +907,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           Icons.palette,
           [
             _buildToolTile(
-              icon: Icons.color_lens,
-              label: 'Change Color',
-              onTap: _showBackgroundColorPicker,
+              icon: Icons.palette,
+              label: 'Canvas Properties',
+              onTap: _showCanvasBackgroundStyleEditor,
             ),
           ],
         ),
@@ -1214,14 +1269,15 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       ..add(const SizedBox(height: 12));
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           decoration: const BoxDecoration(
-            color: Color(0xFF673AB7),
+            color: Color(0xFFF3F4F6),
             boxShadow: [
               BoxShadow(
-                color: Colors.black26,
+                color: Colors.black12,
                 blurRadius: 12,
                 offset: Offset(0, 4),
               ),
@@ -1258,7 +1314,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               ),
               IconButton(
                 onPressed: _closePropertiesPanel,
-                icon: const Icon(Icons.close, color: Colors.white),
+                icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
               ),
             ],
           ),
@@ -1274,17 +1330,28 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Widget _buildPanelSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF1F2937),
-          letterSpacing: 0.3,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+              letterSpacing: 0.2,
+              fontFamily: 'Roboto',
+            ),
+          ),
         ),
-      ),
+        Container(
+          height: 1,
+          color: Colors.grey.shade300,
+          margin: const EdgeInsets.only(bottom: 12),
+        ),
+      ],
     );
   }
 
@@ -1420,31 +1487,31 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     Widget? trailing,
   }) {
     final Widget trailingWidget = trailing ??
-        const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF));
+        const Icon(Icons.chevron_right, color: Color(0xFF6B7280));
 
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFD1D5DB)),
         ),
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: const Color(0xFFEDE9FE),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(icon, color: const Color(0xFF5B21B6), size: 20),
+              child: Icon(icon, color: const Color(0xFF4B5563), size: 16),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1452,18 +1519,20 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                   Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151),
+                      fontFamily: 'Roboto',
                     ),
                   ),
                   if (subtitle != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF6B7280),
+                        fontFamily: 'Roboto',
                       ),
                     ),
                   ],
@@ -2194,32 +2263,64 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     final fontWeight = component.properties['isBold'] == true
         ? FontWeight.bold
         : FontWeight.normal;
-  final colorValue = component.properties['color'] ??
-    component.properties['textColor'] ??
-    0xFF000000;
-  final fontFamily = component.properties['fontFamily'] is String
-    ? component.properties['fontFamily'] as String
-    : null;
-  final isItalic = component.properties['isItalic'] == true;
-  final isUnderline = component.properties['isUnderline'] == true;
-  final letterSpacingValue = component.properties['letterSpacing'];
-  final double? letterSpacing = letterSpacingValue is num
-    ? letterSpacingValue.toDouble()
-    : null;
-  final lineHeightValue = component.properties['lineHeight'];
-  final double height = lineHeightValue is num
-    ? lineHeightValue.toDouble().clamp(1.0, 3.0)
-    : 1.25;
+    final colorValue = component.properties['color'] ??
+        component.properties['textColor'] ??
+        0xFF000000;
+    final fontFamily = component.properties['fontFamily'] is String
+        ? component.properties['fontFamily'] as String
+        : 'Roboto';
+    final isItalic = component.properties['isItalic'] == true;
+    final isUnderline = component.properties['isUnderline'] == true;
+    final letterSpacingValue = component.properties['letterSpacing'];
+    final double? letterSpacing = letterSpacingValue is num
+        ? letterSpacingValue.toDouble()
+        : null;
+    final lineHeightValue = component.properties['lineHeight'];
+    final double height = lineHeightValue is num
+        ? lineHeightValue.toDouble().clamp(1.0, 3.0)
+        : 1.25;
 
-    return TextStyle(
+    // Use Google Fonts for better cross-platform support
+    TextStyle baseStyle;
+    try {
+      switch (fontFamily.toLowerCase()) {
+        case 'roboto':
+          baseStyle = GoogleFonts.roboto();
+          break;
+        case 'poppins':
+          baseStyle = GoogleFonts.poppins();
+          break;
+        case 'lato':
+          baseStyle = GoogleFonts.lato();
+          break;
+        case 'nunito':
+          baseStyle = GoogleFonts.nunito();
+          break;
+        case 'montserrat':
+          baseStyle = GoogleFonts.montserrat();
+          break;
+        case 'open sans':
+          baseStyle = GoogleFonts.openSans();
+          break;
+        case 'merriweather':
+          baseStyle = GoogleFonts.merriweather();
+          break;
+        default:
+          baseStyle = GoogleFonts.roboto();
+      }
+    } catch (e) {
+      // Fallback to system font if Google Fonts fails
+      baseStyle = const TextStyle();
+    }
+
+    return baseStyle.copyWith(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: Color(colorValue),
-    fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
-    letterSpacing: letterSpacing,
-    height: height,
-    fontFamily: fontFamily,
-    decoration: isUnderline ? TextDecoration.underline : TextDecoration.none,
+      fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
+      letterSpacing: letterSpacing,
+      height: height,
+      decoration: isUnderline ? TextDecoration.underline : TextDecoration.none,
     );
   }
 
@@ -3006,6 +3107,20 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       0xFFEF4444,
     ];
 
+    // Pre-defined gradient options (light and dark)
+    const gradientOptions = <Map<String, int>>[
+      // Light gradients
+      {'start': 0xFFE3F2FD, 'end': 0xFFBBDEFB}, // Light blue
+      {'start': 0xFFE8F5E9, 'end': 0xFFC8E6C9}, // Light green  
+      {'start': 0xFFFFF3E0, 'end': 0xFFFFE0B2}, // Light orange
+      {'start': 0xFFFCE4EC, 'end': 0xFFF8BBD9}, // Light pink
+      // Dark gradients
+      {'start': 0xFF1565C0, 'end': 0xFF0D47A1}, // Dark blue
+      {'start': 0xFF2E7D32, 'end': 0xFF1B5E20}, // Dark green
+      {'start': 0xFF673AB7, 'end': 0xFF4527A0}, // Dark purple
+      {'start': 0xFFE91E63, 'end': 0xFFC2185B}, // Dark pink
+    ];
+
     int? backgroundColor = component.properties['backgroundColor'] is int
         ? component.properties['backgroundColor'] as int
         : null;
@@ -3032,273 +3147,248 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => StatefulBuilder(
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Background & border'),
-            content: SingleChildScrollView(
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+            child: Container(
+              constraints: const BoxConstraints(
+                maxWidth: 480,
+                maxHeight: 500,
+              ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Background color'),
-                  if (!useGradient) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: backgroundColor != null ? Color(backgroundColor!) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            backgroundColor != null ? 'Background Color' : 'No Background',
-                            style: TextStyle(
-                              color: backgroundColor != null 
-                                ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black : Colors.white)
-                                : Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Background & border',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                           ),
-                          Icon(
-                            backgroundColor != null ? Icons.color_lens : Icons.disabled_by_default_outlined,
-                            color: backgroundColor != null 
-                              ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black54 : Colors.white70)
-                              : Colors.grey,
-                          ),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final Color? newColor = await _showAdvancedColorPicker(
-                          context,
-                          backgroundColor != null ? Color(backgroundColor!) : Colors.white,
-                          'Select Background Color',
-                        );
-                        if (newColor != null) {
-                          setDialogState(() => backgroundColor = newColor.value);
-                        }
-                      },
-                      icon: const Icon(Icons.palette),
-                      label: const Text('Choose Background Color'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF673AB7),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => setDialogState(() => backgroundColor = null),
-                      icon: const Icon(Icons.clear),
-                      label: const Text('Remove Background'),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: useGradient,
-                    onChanged: (value) => setDialogState(() => useGradient = value),
-                    title: const Text('Use gradient background'),
-                  ),
-                  if (useGradient) ...[
-                    const SizedBox(height: 12),
-                    const Text('Gradient start color'),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Color(gradientStart),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Start Color',
-                            style: TextStyle(
-                              color: Color(gradientStart).computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Icon(
-                            Icons.color_lens,
-                            color: Color(gradientStart).computeLuminance() > 0.5 ? Colors.black54 : Colors.white70,
-                          ),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final Color? newColor = await _showAdvancedColorPicker(
-                          context,
-                          Color(gradientStart),
-                          'Select Start Color',
-                        );
-                        if (newColor != null) {
-                          setDialogState(() => gradientStart = newColor.value);
-                        }
-                      },
-                      icon: const Icon(Icons.palette),
-                      label: const Text('Choose Start Color'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF673AB7),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Gradient end color'),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Color(gradientEnd),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'End Color',
-                            style: TextStyle(
-                              color: Color(gradientEnd).computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Icon(
-                            Icons.color_lens,
-                            color: Color(gradientEnd).computeLuminance() > 0.5 ? Colors.black54 : Colors.white70,
-                          ),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final Color? newColor = await _showAdvancedColorPicker(
-                          context,
-                          Color(gradientEnd),
-                          'Select End Color',
-                        );
-                        if (newColor != null) {
-                          setDialogState(() => gradientEnd = newColor.value);
-                        }
-                      },
-                      icon: const Icon(Icons.palette),
-                      label: const Text('Choose End Color'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF673AB7),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(gradientStart), Color(gradientEnd)],
                         ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: Text('Preview', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close, size: 20),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: showBorder,
-                    onChanged: (value) => setDialogState(() => showBorder = value),
-                    title: const Text('Show border'),
                   ),
-                  if (showBorder) ...[
-                    const SizedBox(height: 8),
-                    const Text('Border width'),
-                    Slider(
-                      value: borderWidth.clamp(0.0, 12.0),
-                      min: 0,
-                      max: 12,
-                      divisions: 12,
-                      label: borderWidth.toStringAsFixed(1),
-                      onChanged: (value) => setDialogState(() => borderWidth = value),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Border color'),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: colorOptions.map((colorValue) {
-                        final bool isSelected = borderColor == colorValue;
-                        return GestureDetector(
-                          onTap: () => setDialogState(() => borderColor = colorValue),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: Color(colorValue),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
-                                width: isSelected ? 3 : 1,
+                  const Divider(height: 1),
+                  // Scrollable content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Background color'),
+                          if (!useGradient) ...[
+                            const SizedBox(height: 4),
+                            const Text('Choose color:', style: TextStyle(fontSize: 11)),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: colorOptions.map((colorValue) {
+                                final bool isSelected = backgroundColor == colorValue;
+                                return GestureDetector(
+                                  onTap: () => setDialogState(() => backgroundColor = colorValue),
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: Color(colorValue),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                        width: isSelected ? 2.5 : 1,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 6),
+                            TextButton.icon(
+                              onPressed: () => setDialogState(() => backgroundColor = null),
+                              icon: const Icon(Icons.clear, size: 14),
+                              label: const Text('Remove', style: TextStyle(fontSize: 11)),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                minimumSize: const Size(0, 24),
                               ),
                             ),
+                          ],
+                          const SizedBox(height: 8),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: useGradient,
+                            onChanged: (value) => setDialogState(() => useGradient = value),
+                            title: const Text('Use gradient background', style: TextStyle(fontSize: 13)),
+                            dense: true,
                           ),
-                        );
-                      }).toList(),
+                          if (useGradient) ...[
+                            const SizedBox(height: 4),
+                            const Text('Select gradient:', style: TextStyle(fontSize: 12)),
+                            const SizedBox(height: 6),
+                            Column(
+                              children: gradientOptions.map((gradient) {
+                                final bool isSelected = gradientStart == gradient['start'] && gradientEnd == gradient['end'];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setDialogState(() {
+                                        gradientStart = gradient['start']!;
+                                        gradientEnd = gradient['end']!;
+                                      });
+                                    },
+                                    child: Container(
+                                      width: double.infinity,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [Color(gradient['start']!), Color(gradient['end']!)],
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                          width: isSelected ? 2 : 1,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          isSelected ? '✓ Selected' : 'Tap to select',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            shadows: [Shadow(color: Colors.black54, offset: Offset(0, 1))],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: showBorder,
+                            onChanged: (value) => setDialogState(() => showBorder = value),
+                            title: const Text('Show border', style: TextStyle(fontSize: 13)),
+                            dense: true,
+                          ),
+                          if (showBorder) ...[
+                            const SizedBox(height: 4),
+                            const Text('Border width', style: TextStyle(fontSize: 12)),
+                            Slider(
+                              value: borderWidth.clamp(0.0, 12.0),
+                              min: 0,
+                              max: 12,
+                              divisions: 12,
+                              label: borderWidth.toStringAsFixed(1),
+                              onChanged: (value) => setDialogState(() => borderWidth = value),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text('Border color', style: TextStyle(fontSize: 12)),
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: colorOptions.map((colorValue) {
+                                final bool isSelected = borderColor == colorValue;
+                                return GestureDetector(
+                                  onTap: () => setDialogState(() => borderColor = colorValue),
+                                  child: Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color: Color(colorValue),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: isSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                        width: isSelected ? 2 : 1,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          const Text('Corner radius', style: TextStyle(fontSize: 12)),
+                          Slider(
+                            value: borderRadius.clamp(0.0, 48.0),
+                            min: 0,
+                            max: 48,
+                            divisions: 24,
+                            label: borderRadius.toStringAsFixed(0),
+                            onChanged: (value) => setDialogState(() => borderRadius = value),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text('Padding', style: TextStyle(fontSize: 12)),
+                          Slider(
+                            value: padding.clamp(0.0, 36.0),
+                            min: 0,
+                            max: 36,
+                            divisions: 18,
+                            label: padding.toStringAsFixed(0),
+                            onChanged: (value) => setDialogState(() => padding = value),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  const Text('Corner radius'),
-                  Slider(
-                    value: borderRadius.clamp(0.0, 48.0),
-                    min: 0,
-                    max: 48,
-                    divisions: 24,
-                    label: borderRadius.toStringAsFixed(0),
-                    onChanged: (value) => setDialogState(() => borderRadius = value),
                   ),
-                  const SizedBox(height: 12),
-                  const Text('Padding'),
-                  Slider(
-                    value: padding.clamp(0.0, 36.0),
-                    min: 0,
-                    max: 36,
-                    divisions: 18,
-                    label: padding.toStringAsFixed(0),
-                    onChanged: (value) => setDialogState(() => padding = value),
+                  // Actions
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          ),
+                          child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop<Map<String, dynamic>>({
+                              'backgroundColor': useGradient ? null : backgroundColor,
+                              'useGradient': useGradient,
+                              'gradientStart': useGradient ? gradientStart : null,
+                              'gradientEnd': useGradient ? gradientEnd : null,
+                              'showBorder': showBorder,
+                              'borderWidth': showBorder ? borderWidth : 0.0,
+                              'borderColor': showBorder ? borderColor : component.properties['borderColor'],
+                              'borderRadius': borderRadius,
+                              'padding': padding,
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF673AB7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                          ),
+                          child: const Text('Apply', style: TextStyle(fontSize: 13)),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop<Map<String, dynamic>>(context, {
-                    'backgroundColor': useGradient ? null : backgroundColor,
-                    'useGradient': useGradient,
-                    'gradientStart': useGradient ? gradientStart : null,
-                    'gradientEnd': useGradient ? gradientEnd : null,
-                    'showBorder': showBorder,
-                    'borderWidth': showBorder ? borderWidth : 0.0,
-                    'borderColor': showBorder ? borderColor : component.properties['borderColor'],
-                    'borderRadius': borderRadius,
-                    'padding': padding,
-                  });
-                },
-                child: const Text('Apply'),
-              ),
-            ],
           );
         },
       ),
@@ -3306,14 +3396,345 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     if (!mounted || result == null) return;
 
+    final Map<String, dynamic> resultMap = result;
     setState(() {
-      component.properties.addAll(result);
-      if (result['showBorder'] != true) {
-        component.properties['borderWidth'] = 0.0;
-      }
-      _applyFullWidthLayout(component);
+      component.properties.addAll(resultMap);
     });
     _updateCanvasSize();
+  }
+
+  Future<void> _showCanvasBackgroundStyleEditor() async {
+    const colorOptions = <int>[
+      0xFFFFFFFF, // White
+      0xFFF7F7F7, // Light Gray
+      0xFFE3F2FD, // Light Blue
+      0xFFE8F5E9, // Light Green
+      0xFFFFF3E0, // Light Orange
+      0xFFFCE4EC, // Light Pink
+      0xFF1F2933, // Dark Gray
+      0xFF4B5563, // Slate Gray
+      0xFF8B5CF6, // Purple
+      0xFF3B82F6, // Blue
+      0xFF10B981, // Green
+      0xFFF59E0B, // Orange
+      0xFFEF4444, // Red
+      0xFF6B7280, // Gray
+    ];
+
+    int? backgroundColor = canvasBackgroundColor.value == 0xFFFFFFFF ? null : canvasBackgroundColor.value;
+    bool useGradient = useGradientBackground;
+    int gradientStart = _customGradientStartColor.value;
+    int gradientEnd = _customGradientEndColor.value;
+
+    final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+            child: Container(
+              constraints: const BoxConstraints(
+                maxWidth: 480,
+                maxHeight: 500,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Canvas Background',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close, size: 20),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // Scrollable content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Background color'),
+                          if (!useGradient) ...[
+                            const SizedBox(height: 8),
+                            const Text('Background Color', style: TextStyle(fontSize: 12)),
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () async {
+                                final Color? newColor = await _showAdvancedColorPicker(
+                                  context,
+                                  backgroundColor != null ? Color(backgroundColor!) : Colors.white,
+                                  'Select Background Color',
+                                );
+                                if (newColor != null) {
+                                  setDialogState(() => backgroundColor = newColor.value);
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: backgroundColor != null ? Color(backgroundColor!) : Colors.white,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.palette,
+                                      color: backgroundColor != null
+                                          ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black54 : Colors.white70)
+                                          : Colors.black54,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Tap to choose color',
+                                      style: TextStyle(
+                                        color: backgroundColor != null
+                                            ? (Color(backgroundColor!).computeLuminance() > 0.5 ? Colors.black : Colors.white)
+                                            : Colors.black,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ElevatedButton.icon(
+                              onPressed: () => setDialogState(() => backgroundColor = 0xFFFFFFFF),
+                              icon: const Icon(Icons.refresh, size: 14),
+                              label: const Text('Reset to White', style: TextStyle(fontSize: 11)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: useGradient,
+                            onChanged: (value) => setDialogState(() => useGradient = value),
+                            title: const Text('Use gradient background', style: TextStyle(fontSize: 13)),
+                            dense: true,
+                          ),
+                          if (useGradient) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                // Start Color Picker
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Start Color', style: TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final Color? newColor = await _showAdvancedColorPicker(
+                                            context,
+                                            Color(gradientStart),
+                                            'Select Start Color',
+                                          );
+                                          if (newColor != null) {
+                                            setDialogState(() => gradientStart = newColor.value);
+                                          }
+                                        },
+                                        child: Container(
+                                          width: double.infinity,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Color(gradientStart),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                          ),
+                                          child: Icon(
+                                            Icons.palette,
+                                            color: Color(gradientStart).computeLuminance() > 0.5 
+                                                ? Colors.black54 
+                                                : Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // End Color Picker
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('End Color', style: TextStyle(fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final Color? newColor = await _showAdvancedColorPicker(
+                                            context,
+                                            Color(gradientEnd),
+                                            'Select End Color',
+                                          );
+                                          if (newColor != null) {
+                                            setDialogState(() => gradientEnd = newColor.value);
+                                          }
+                                        },
+                                        child: Container(
+                                          width: double.infinity,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Color(gradientEnd),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                          ),
+                                          child: Icon(
+                                            Icons.palette,
+                                            color: Color(gradientEnd).computeLuminance() > 0.5 
+                                                ? Colors.black54 
+                                                : Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        final temp = gradientStart;
+                                        gradientStart = gradientEnd;
+                                        gradientEnd = temp;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.swap_horiz, size: 16),
+                                    label: const Text('Swap Colors', style: TextStyle(fontSize: 11)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey.shade600,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 30,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(gradientStart), Color(gradientEnd)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Gradient Preview',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    shadows: [Shadow(color: Colors.black54, offset: Offset(0, 1))],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Actions
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          ),
+                          child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop<Map<String, dynamic>>({
+                              'backgroundColor': useGradient ? null : backgroundColor,
+                              'useGradient': useGradient,
+                              'gradientStart': useGradient ? gradientStart : null,
+                              'gradientEnd': useGradient ? gradientEnd : null,
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF673AB7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                          ),
+                          child: const Text('Apply', style: TextStyle(fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    final Map<String, dynamic> resultMap = result;
+    setState(() {
+      if (resultMap['useGradient'] == true) {
+        // Apply gradient
+        useGradientBackground = true;
+        _customGradientStartColor = Color(resultMap['gradientStart'] as int);
+        _customGradientEndColor = Color(resultMap['gradientEnd'] as int);
+        canvasBackgroundGradient = LinearGradient(
+          colors: [_customGradientStartColor, _customGradientEndColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+        canvasBackgroundColor = _customGradientStartColor;
+        _selectedBackgroundPresetId = _customGradientPresetId;
+      } else {
+        // Apply solid color
+        useGradientBackground = false;
+        canvasBackgroundColor = Color(resultMap['backgroundColor'] as int? ?? 0xFFFFFFFF);
+        canvasBackgroundGradient = null;
+        _selectedBackgroundPresetId = 'custom_solid';
+      }
+    });
   }
 
   void _addComponentToCanvas(ComponentType type, Offset globalOffset) {
@@ -3657,6 +4078,51 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       }
     });
     _updateCanvasSize();
+    
+    // Show confirmation dialog with OK button
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Component Deleted',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+            fontFamily: 'Roboto',
+          ),
+        ),
+        content: const Text(
+          'The component has been successfully removed from the canvas.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF6B7280),
+            fontFamily: 'Roboto',
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4B5563),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Roboto',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _clearCanvas() {
@@ -3833,9 +4299,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
             return AlertDialog(
               title: const Text('Custom Canvas Gradient'),
-              content: SingleChildScrollView(
-                child: SizedBox(
-                  width: 380,
+              content: SizedBox(
+                height: 400, // Constrain height to prevent overflow
+                width: 380,
+                child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -4231,7 +4698,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
   }
 
-  /// Shows an advanced color picker dialog with color wheel and palette
+  /// Shows an advanced color picker dialog with only square color blocks
   Future<Color?> _showAdvancedColorPicker(
     BuildContext context,
     Color initialColor,
@@ -4239,93 +4706,188 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   ) async {
     Color selectedColor = initialColor;
 
+    // Comprehensive color palette with square blocks only
+    final List<Color> colorPalette = [
+      // Whites and Grays
+      Colors.white, const Color(0xFFF5F5F5), const Color(0xFFEEEEEE), const Color(0xFFE0E0E0),
+      const Color(0xFFBDBDBD), const Color(0xFF9E9E9E), const Color(0xFF757575), const Color(0xFF616161),
+      const Color(0xFF424242), const Color(0xFF212121), Colors.black,
+      
+      // Reds
+      const Color(0xFFFFEBEE), const Color(0xFFFFCDD2), const Color(0xFFEF9A9A), const Color(0xFFE57373),
+      const Color(0xFFEF5350), const Color(0xFFF44336), const Color(0xFFE53935), const Color(0xFFD32F2F),
+      const Color(0xFFC62828), const Color(0xFFB71C1C), const Color(0xFFFF5722),
+      
+      // Pinks
+      const Color(0xFFFCE4EC), const Color(0xFFF8BBD9), const Color(0xFFF48FB1), const Color(0xFFF06292),
+      const Color(0xFFEC407A), const Color(0xFFE91E63), const Color(0xFFD81B60), const Color(0xFFC2185B),
+      const Color(0xFFAD1457), const Color(0xFF880E4F),
+      
+      // Purples
+      const Color(0xFFF3E5F5), const Color(0xFFE1BEE7), const Color(0xFFCE93D8), const Color(0xFFBA68C8),
+      const Color(0xFFAB47BC), const Color(0xFF9C27B0), const Color(0xFF8E24AA), const Color(0xFF7B1FA2),
+      const Color(0xFF6A1B9A), const Color(0xFF4A148C), const Color(0xFF673AB7),
+      
+      // Blues
+      const Color(0xFFE3F2FD), const Color(0xFFBBDEFB), const Color(0xFF90CAF9), const Color(0xFF64B5F6),
+      const Color(0xFF42A5F5), const Color(0xFF2196F3), const Color(0xFF1E88E5), const Color(0xFF1976D2),
+      const Color(0xFF1565C0), const Color(0xFF0D47A1), const Color(0xFF03A9F4),
+      
+      // Cyans
+      const Color(0xFFE0F2F1), const Color(0xFFB2DFDB), const Color(0xFF80CBC4), const Color(0xFF4DB6AC),
+      const Color(0xFF26A69A), const Color(0xFF009688), const Color(0xFF00897B), const Color(0xFF00796B),
+      const Color(0xFF00695C), const Color(0xFF004D40), const Color(0xFF00BCD4),
+      
+      // Greens
+      const Color(0xFFE8F5E8), const Color(0xFFC8E6C9), const Color(0xFFA5D6A7), const Color(0xFF81C784),
+      const Color(0xFF66BB6A), const Color(0xFF4CAF50), const Color(0xFF43A047), const Color(0xFF388E3C),
+      const Color(0xFF2E7D32), const Color(0xFF1B5E20), const Color(0xFF8BC34A),
+      
+      // Yellows
+      const Color(0xFFFFFDE7), const Color(0xFFFFF9C4), const Color(0xFFFFF59D), const Color(0xFFFFF176),
+      const Color(0xFFFFEE58), const Color(0xFFFFEB3B), const Color(0xFFFDD835), const Color(0xFFFBC02D),
+      const Color(0xFFF9A825), const Color(0xFFF57F17), const Color(0xFFFFc107),
+      
+      // Oranges
+      const Color(0xFFFFF3E0), const Color(0xFFFFE0B2), const Color(0xFFFFCC80), const Color(0xFFFFB74D),
+      const Color(0xFFFFA726), const Color(0xFFFF9800), const Color(0xFFFB8C00), const Color(0xFFF57C00),
+      const Color(0xFFEF6C00), const Color(0xFFE65100),
+    ];
+
     return showDialog<Color>(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return AlertDialog(
-              title: Text(title),
-              content: SizedBox(
-                width: 300,
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+              child: Container(
+                constraints: const BoxConstraints(
+                  maxWidth: 340,
+                  maxHeight: 420,
+                ),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Color preview
+                    // Header
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(null),
+                          icon: const Icon(Icons.close, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Selected color preview
                     Container(
                       width: double.infinity,
-                      height: 50,
+                      height: 32,
                       decoration: BoxDecoration(
                         color: selectedColor,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300, width: 0.5),
                       ),
                       child: Center(
                         child: Text(
                           '#${selectedColor.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
                           style: TextStyle(
                             color: selectedColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Color picker wheel
-                    SizedBox(
-                      height: 200,
-                      child: ColorPicker(
-                        color: selectedColor,
-                        onColorChanged: (Color color) {
-                          setState(() {
-                            selectedColor = color;
-                          });
-                        },
-                        width: 32,
-                        height: 32,
-                        borderRadius: 8,
-                        spacing: 5,
-                        runSpacing: 5,
-                        wheelDiameter: 180,
-                        heading: const SizedBox.shrink(),
-                        subheading: const SizedBox.shrink(),
-                        wheelSubheading: const SizedBox.shrink(),
-                        showMaterialName: false,
-                        showColorName: false,
-                        showColorCode: false,
-                        copyPasteBehavior: const ColorPickerCopyPasteBehavior(
-                          longPressMenu: false,
+                    const SizedBox(height: 12),
+                    // Square color grid
+                    Expanded(
+                      child: GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 8,
+                          crossAxisSpacing: 4,
+                          mainAxisSpacing: 4,
                         ),
-                        materialNameTextStyle: Theme.of(context).textTheme.bodySmall,
-                        colorNameTextStyle: Theme.of(context).textTheme.bodySmall,
-                        colorCodeTextStyle: Theme.of(context).textTheme.bodySmall,
-                        pickersEnabled: const <ColorPickerType, bool>{
-                          ColorPickerType.both: false,
-                          ColorPickerType.primary: false,
-                          ColorPickerType.accent: false,
-                          ColorPickerType.bw: false,
-                          ColorPickerType.custom: false,
-                          ColorPickerType.wheel: true,
+                        itemCount: colorPalette.length,
+                        itemBuilder: (context, index) {
+                          final color = colorPalette[index];
+                          final isSelected = color.value == selectedColor.value;
+                          return GestureDetector(
+                            onTap: () => setState(() => selectedColor = color),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(2), // Slightly rounded square
+                                border: Border.all(
+                                  color: isSelected ? Colors.black : Colors.grey.shade400,
+                                  width: isSelected ? 2 : 0.5,
+                                ),
+                                boxShadow: isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.3),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: isSelected
+                                  ? const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 16,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black,
+                                          blurRadius: 2,
+                                        ),
+                                      ],
+                                    )
+                                  : null,
+                            ),
+                          );
                         },
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Actions
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(null),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            minimumSize: const Size(0, 28),
+                          ),
+                          child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(selectedColor),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF673AB7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            minimumSize: const Size(0, 28),
+                          ),
+                          child: const Text('Select', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(null),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(selectedColor),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF673AB7),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Select'),
-                ),
-              ],
             );
           },
         );

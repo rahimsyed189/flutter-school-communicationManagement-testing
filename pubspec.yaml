@@ -42,7 +42,8 @@ dependencies:
   wakelock_plus: ^1.2.8
   flutter_isolate: ^2.0.4
   intl: ^0.20.2
-  flex_color_picker: ^3.4.1
+  flutter_colorpicker: ^1.0.3
+  google_fonts: ^6.1.0
 
 dev_dependencies:
   flutter_test:
