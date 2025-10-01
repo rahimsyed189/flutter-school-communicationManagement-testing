@@ -38,12 +38,21 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   // Canvas properties
   double canvasWidth = 400;
   double canvasHeight = 360;
-  Color canvasBackgroundColor = const Color(0xFFF8FAFC); // Light gradient start color
-  Gradient? canvasBackgroundGradient;
+  Color canvasBackgroundColor = const Color(0xFFE2E8F0); // Darker blue-gray
+  Color canvasSecondaryColor = const Color(0xFF93C5FD); // Darker blue for gradient  
+  Gradient? canvasBackgroundGradient = const LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFFE2E8F0), // Darker blue-gray start
+      Colors.white, // White end
+    ],
+  );
   bool useGradientBackground = true; // Default to gradient
-  Color canvasBorderColor = Colors.grey.shade300;
+  Color canvasBorderColor = const Color(0xFFE5E7EB); // Light gray border
   double canvasBorderRadius = 12.0; // Curved corners
-  double canvasBorderWidth = 0.0;
+  double canvasBorderWidth = 1.0; // Visible border
+  double componentSpacing = 0.0; // Minimum gap between components by default
   static const String _customGradientPresetId = 'custom_gradient';
   static const String _defaultGradientDirection = 'diagonal';
   static const Map<String, List<Alignment>> _gradientDirectionPresets = {
@@ -59,8 +68,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     'reverseDiagonal': 'Reverse Diagonal',
   };
   String _selectedBackgroundPresetId = 'preset_solid_white';
-  Color _customGradientStartColor = const Color(0xFFF8FAFC); // Very light blue-gray
-  Color _customGradientEndColor = const Color(0xFFBFDBFE); // Light blue
+  Color _customGradientStartColor = const Color(0xFFE2E8F0); // Darker blue-gray
+  Color _customGradientEndColor = Colors.white; // White
   String _customGradientDirection = _defaultGradientDirection;
   final GlobalKey _canvasKey = GlobalKey();
 
@@ -243,18 +252,24 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF673AB7),
-        elevation: 0,
+        backgroundColor: Colors.white,
+        elevation: 1,
+        shadowColor: Colors.black.withOpacity(0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.grey),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            onPressed: _showSettingsMenu,
-            icon: const Icon(Icons.settings, color: Colors.white),
-            tooltip: 'Canvas Settings',
+        title: const Text(
+          'Template Builder',
+          style: TextStyle(
+            color: Colors.black87,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
           ),
+        ),
+        centerTitle: false,
+        actions: [
+          // Settings button hidden as requested
           IconButton(
             onPressed: _isLoading ? null : _saveTemplate,
             icon: _isLoading 
@@ -263,10 +278,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                     height: 20, 
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
                     )
                   )
-                : const Icon(Icons.save, color: Colors.white),
+                : const Icon(Icons.save, color: Colors.grey),
             tooltip: _isLoading ? 'Saving...' : 'Save Template',
           ),
         ],
@@ -317,72 +332,59 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           // Canvas Area (Right Side)
           Expanded(
             child: Container(
-              padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 150), // Extra bottom padding for components panel
-              child: Column(
+              padding: const EdgeInsets.all(20),
+              child: Stack(
                 children: [
-                  // Canvas Controls
-                  _buildCanvasControls(),
-                  const SizedBox(height: 16),
-                  
-                  // Canvas
-                  Expanded(
-                    child: Scrollbar(
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-            physics: (_isDraggingComponent || _isResizingComponent)
-                            ? const NeverScrollableScrollPhysics()
-                            : const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _buildCanvas(),
-                        ),
+                  Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      physics: (_isDraggingComponent || _isResizingComponent)
+                          ? const NeverScrollableScrollPhysics()
+                          : const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: _buildCanvas(),
                       ),
                     ),
                   ),
+                  _buildFloatingComponentIconsWithProperties(),
                 ],
               ),
             ),
           ),
         ]);
           } else {
-            // Mobile Layout - Canvas with fixed bottom components panel
-            return Column(
+            // Mobile Layout - Canvas with floating component icons
+            return Stack(
               children: [
-                // Canvas Area (Mobile) - takes remaining space, with bottom padding for components panel
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 120), // Extra bottom padding for components panel
-                    child: Scrollbar(
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        physics: (_isDraggingComponent || _isResizingComponent)
-                            ? const NeverScrollableScrollPhysics()
-                            : const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _buildCanvas(),
+                Column(
+                  children: [
+                    // Canvas Area (Mobile) - takes remaining space
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            physics: (_isDraggingComponent || _isResizingComponent)
+                                ? const NeverScrollableScrollPhysics()
+                                : const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: _buildCanvas(),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
+                _buildFloatingComponentIconsWithProperties(),
               ],
             );
                 }
-              },
-            ),
-          ),
-          // Fixed Bottom Components Panel (for all screen sizes)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isTablet = constraints.maxWidth > 600;
-                return isTablet ? _buildSlidingComponentsPanel() : _buildSlidingComponentsPanelMobile();
               },
             ),
           ),
@@ -391,597 +393,106 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     );
   }
 
-  Widget _buildSlidingComponentsPanelMobile() {
-    bool _isPanelExpanded = false;
-    
-    return StatefulBuilder(
-      builder: (context, setSliderState) => Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF1A1A2E),
-              const Color(0xFF16213E),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header with drag handle and toggle
-            Container(
-              padding: const EdgeInsets.only(top: 8, left: 16, right: 16, bottom: 12),
-              child: Column(
-                children: [
-                  // Drag handle
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  // Header row
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF4FC3F7).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.construction,
-                          size: 18,
-                          color: const Color(0xFF4FC3F7),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Component Library',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'Drag & drop to build',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${canvasWidth.toInt()}×${canvasHeight.toInt()}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.white.withOpacity(0.8),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () {
-                          setSliderState(() {
-                            _isPanelExpanded = !_isPanelExpanded;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4FC3F7).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: const Color(0xFF4FC3F7).withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Icon(
-                            _isPanelExpanded ? Icons.expand_less : Icons.expand_more,
-                            size: 18,
-                            color: const Color(0xFF4FC3F7),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Animated components list
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              height: _isPanelExpanded ? 100 : 0,
-              child: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 20),
-                  child: _buildModernComponentsGrid(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMobileHorizontalComponentsList() {
+  Widget _buildFloatingComponentIconsWithProperties() {
     final components = [
-      {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'label': 'Text'},
-      {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'label': 'Box'},
-      {'type': ComponentType.dateContainer, 'icon': Icons.calendar_today, 'label': 'Date'},
-      {'type': ComponentType.imageContainer, 'icon': Icons.image, 'label': 'Image'},
-      {'type': ComponentType.iconContainer, 'icon': Icons.emoji_emotions, 'label': 'Icon'},
-      {'type': ComponentType.woodenContainer, 'icon': Icons.crop_square, 'label': 'Container'},
-      {'type': ComponentType.coloredContainer, 'icon': Icons.rectangle, 'label': 'Box'},
-      {'type': ComponentType.calendar, 'icon': Icons.date_range, 'label': 'Calendar'},
-      {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'label': 'Divider'},
+      {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'tooltip': 'Text Label'},
+      {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'tooltip': 'Text Box'},
+      {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'tooltip': 'Divider'},
     ];
 
-    return SizedBox(
-      height: 80,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: components.length,
-        itemBuilder: (context, index) {
-          final component = components[index];
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _buildMobileComponentTile(
-              component['type'] as ComponentType,
-              component['icon'] as IconData,
-              component['label'] as String,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildMobileComponentTile(ComponentType type, IconData icon, String label) {
-    return GestureDetector(
-      onTap: () => _addComponentToCanvasMobile(type),
-      child: Container(
-        width: 60,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFF8F9FA),
-              const Color(0xFFEEF1F5),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: const Color(0xFF673AB7).withOpacity(0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF673AB7).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                icon,
-                size: 18,
-                color: const Color(0xFF673AB7),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF555555),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-
-
-  Widget _buildCanvasControls() {
-    return _buildSlidingComponentsPanel();
-  }
-
-  Widget _buildSlidingComponentsPanel() {
-    bool _isPanelExpanded = false;
-    
-    return StatefulBuilder(
-      builder: (context, setSliderState) => Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF0F0F23),
-              const Color(0xFF1A1A2E),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 25,
-              offset: const Offset(0, -8),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header with drag handle and toggle
-            Container(
-              padding: const EdgeInsets.only(top: 12, left: 20, right: 20, bottom: 16),
-              child: Column(
-                children: [
-                  // Drag handle
-                  Container(
+    return Positioned(
+      bottom: 20,
+      right: 20,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Component icons
+          ...components.reversed.map((component) {
+            return Container(
+              margin: EdgeInsets.only(bottom: 12),
+              child: Tooltip(
+                message: component['tooltip'] as String,
+                child: GestureDetector(
+                  onTap: () => _addComponentToCanvasMobile(component['type'] as ComponentType),
+                  child: Container(
                     width: 50,
-                    height: 5,
-                    margin: const EdgeInsets.only(bottom: 16),
+                    height: 50,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(3),
+                      color: Colors.white.withOpacity(0.7), // More transparent background
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.grey[300]!.withOpacity(0.7), // More transparent border
+                        width: 1,
+                      ),
+                    ),
+                    child: Icon(
+                      component['icon'] as IconData,
+                      size: 24,
+                      color: Colors.grey[700],
                     ),
                   ),
-                  // Header row
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              const Color(0xFF4FC3F7),
-                              const Color(0xFF29B6F6),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF4FC3F7).withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.construction,
-                          size: 22,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Component Library',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          Text(
-                            'Drag components to canvas • Build amazing templates',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withOpacity(0.7),
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
-                            width: 1,
-                          ),
-                        ),
-                        child: Text(
-                          'Canvas: ${canvasWidth.toInt()}×${canvasHeight.toInt()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withOpacity(0.9),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () {
-                          setSliderState(() {
-                            _isPanelExpanded = !_isPanelExpanded;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFF4FC3F7).withOpacity(0.3),
-                                const Color(0xFF29B6F6).withOpacity(0.2),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFF4FC3F7).withOpacity(0.4),
-                              width: 1,
-                            ),
-                          ),
-                          child: Icon(
-                            _isPanelExpanded ? Icons.expand_less : Icons.expand_more,
-                            size: 20,
-                            color: const Color(0xFF4FC3F7),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Animated components list
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeInOut,
-              height: _isPanelExpanded ? 130 : 0,
-              child: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.only(left: 20, right: 20, bottom: 24),
-                  child: _buildModernComponentsGrid(),
                 ),
               ),
-            ),
-          ],
-        ),
+            );
+          }).toList(),
+          // Properties button at the bottom
+          Container(
+            margin: EdgeInsets.only(top: 8),
+            child: _buildPropertiesButtonOnly(),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildHorizontalComponentsList() {
-    final components = [
-      {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'label': 'Text'},
-      {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'label': 'Text Box'},
-      {'type': ComponentType.dateContainer, 'icon': Icons.calendar_today, 'label': 'Date'},
-      {'type': ComponentType.imageContainer, 'icon': Icons.image, 'label': 'Image'},
-      {'type': ComponentType.iconContainer, 'icon': Icons.emoji_emotions, 'label': 'Icon'},
-      {'type': ComponentType.woodenContainer, 'icon': Icons.crop_square, 'label': 'Container'},
-      {'type': ComponentType.coloredContainer, 'icon': Icons.rectangle, 'label': 'Box'},
-      {'type': ComponentType.calendar, 'icon': Icons.date_range, 'label': 'Calendar'},
-      {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'label': 'Divider'},
-    ];
+  Widget _buildPropertiesButtonOnly() {
+    BuilderComponent? selectedComponent;
+    if (_selectedComponentId != null) {
+      try {
+        selectedComponent = _canvasComponents.firstWhere((c) => c.id == _selectedComponentId);
+      } catch (e) {
+        selectedComponent = null;
+      }
+    }
 
-    return SizedBox(
-      height: 120,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: components.length,
-        itemBuilder: (context, index) {
-          final component = components[index];
-          return Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _buildHorizontalComponentTile(
-              component['type'] as ComponentType,
-              component['icon'] as IconData,
-              component['label'] as String,
-            ),
-          );
+    return Tooltip(
+      message: selectedComponent != null ? 'Component Properties' : 'Canvas Properties',
+      child: GestureDetector(
+        onTap: () {
+          if (selectedComponent != null) {
+            _showPropertiesDialog(selectedComponent);
+          } else {
+            _showCanvasBackgroundStyleEditor();
+          }
         },
-      ),
-    );
-  }
-
-  Widget _buildHorizontalComponentTile(ComponentType type, IconData icon, String label) {
-    return GestureDetector(
-      onTap: () => _addComponentToCanvasTablet(type),
-      child: Container(
-        width: 80,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFF8F9FA),
-              const Color(0xFFEEF1F5),
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: selectedComponent != null 
+                ? Colors.orange.withOpacity(0.7) // Orange for component properties (more transparent)
+                : Colors.black.withOpacity(0.5), // Black for canvas properties (more transparent)
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
             ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFF673AB7).withOpacity(0.2),
-            width: 1,
+          child: Icon(
+            Icons.palette,
+            color: Colors.white,
+            size: 24,
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF673AB7).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                size: 24,
-                color: const Color(0xFF673AB7),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF555555),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModernComponentsGrid() {
-    final components = [
-      {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'label': 'Text', 'color': const Color(0xFF4FC3F7)},
-      {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'label': 'Text Box', 'color': const Color(0xFF66BB6A)},
-      {'type': ComponentType.dateContainer, 'icon': Icons.calendar_today, 'label': 'Date', 'color': const Color(0xFFEF5350)},
-      {'type': ComponentType.imageContainer, 'icon': Icons.image, 'label': 'Image', 'color': const Color(0xFFFF7043)},
-      {'type': ComponentType.iconContainer, 'icon': Icons.emoji_emotions, 'label': 'Icon', 'color': const Color(0xFFFFCA28)},
-      {'type': ComponentType.woodenContainer, 'icon': Icons.crop_square, 'label': 'Panel', 'color': const Color(0xFF8D6E63)},
-      {'type': ComponentType.coloredContainer, 'icon': Icons.rectangle, 'label': 'Box', 'color': const Color(0xFF9C27B0)},
-      {'type': ComponentType.calendar, 'icon': Icons.date_range, 'label': 'Calendar', 'color': const Color(0xFF5C6BC0)},
-      {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'label': 'Divider', 'color': const Color(0xFF26A69A)},
-    ];
-
-    return SizedBox(
-      height: 80,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: components.length,
-        itemBuilder: (context, index) {
-          final component = components[index];
-          return Container(
-            margin: const EdgeInsets.only(right: 12),
-            child: _buildModernComponentTile(
-              component['type'] as ComponentType,
-              component['icon'] as IconData,
-              component['label'] as String,
-              component['color'] as Color,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildModernComponentTile(ComponentType type, IconData icon, String label, Color accentColor) {
-    return GestureDetector(
-      onTap: () => _addComponentToCanvasTablet(type),
-      child: Container(
-        width: 70,
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.white.withOpacity(0.2),
-              Colors.white.withOpacity(0.1),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.2),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: accentColor.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    accentColor,
-                    accentColor.withOpacity(0.8),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(0.3),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(
-                icon,
-                size: 18,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
         ),
       ),
     );
@@ -1921,12 +1432,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                     ),
                   ),
                   ..._canvasComponents.map((component) => _buildCanvasComponent(component)).toList(),
-                  // Canvas Properties Button
-                  Positioned(
-                    bottom: 16,
-                    right: 16,
-                    child: _buildCanvasPropertiesButton(),
-                  ),
                 ],
               );
             },
@@ -1994,7 +1499,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           width: component.width,
           height: component.height,
           decoration: BoxDecoration(
-            border: isSelected ? Border.all(color: const Color(0xFF673AB7), width: 2) : null,
+            border: isSelected ? Border.all(
+              color: Colors.grey.shade400,
+              width: 2,
+            ) : null,
             borderRadius: BorderRadius.circular(4),
           ),
           child: Stack(
@@ -2008,6 +1516,37 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               
               // Selection Controls
               if (isSelected && !isEditing) ...[
+                // Close button (top-left)
+                Positioned(
+                  top: -12,
+                  left: -12,
+                  child: GestureDetector(
+                    onTap: () {
+                      _deleteComponent(component.id);
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+                // Resize handle (bottom-right)
                 Positioned(
                   bottom: 6,
                   right: 6,
@@ -2699,7 +2238,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       }
     }
 
-    return maxBottom + _componentVerticalSpacing;
+    return maxBottom + componentSpacing;
   }
 
   TextStyle _resolveTextStyle(BuilderComponent component) {
@@ -3210,7 +2749,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             height: 48,
             decoration: BoxDecoration(
               color: selectedComponent != null 
-                  ? const Color(0xFF673AB7).withOpacity(0.9) // Purple for component properties
+                  ? Colors.orange.withOpacity(0.9) // Orange for component properties
                   : Colors.black.withOpacity(0.7), // Black for canvas properties
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
@@ -4592,6 +4131,39 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                               setDialogState(() => canvasBorderRadius = value);
                             },
                           ),
+                          
+                          // Component Spacing Section
+                          const SizedBox(height: 24),
+                          Text(
+                            'Component Spacing',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text('Gap Between Components: ${componentSpacing.toInt()}px', 
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          Slider(
+                            value: componentSpacing,
+                            min: 0.0,
+                            max: 50.0,
+                            divisions: 50,
+                            label: '${componentSpacing.toInt()}px',
+                            activeColor: const Color(0xFF673AB7),
+                            onChanged: (value) {
+                              setDialogState(() => componentSpacing = value);
+                            },
+                          ),
+                          Text(
+                            'Controls the minimum gap between components when auto-aligning',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -4624,6 +4196,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                               'borderColor': canvasBorderColor.value,
                               'borderWidth': canvasBorderWidth,
                               'borderRadius': canvasBorderRadius,
+                              'componentSpacing': componentSpacing,
                             });
                           },
                           style: ElevatedButton.styleFrom(
@@ -4676,6 +4249,11 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       }
       if (resultMap['borderRadius'] != null) {
         canvasBorderRadius = resultMap['borderRadius'] as double;
+      }
+      
+      // Apply component spacing
+      if (resultMap['componentSpacing'] != null) {
+        componentSpacing = resultMap['componentSpacing'] as double;
       }
     });
   }
@@ -5032,51 +4610,6 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       }
     });
     _updateCanvasSize();
-    
-    // Show confirmation dialog with OK button
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'Component Deleted',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF374151),
-            fontFamily: 'Roboto',
-          ),
-        ),
-        content: const Text(
-          'The component has been successfully removed from the canvas.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF6B7280),
-            fontFamily: 'Roboto',
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4B5563),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            child: const Text(
-              'OK',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                fontFamily: 'Roboto',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   void _clearCanvas() {
@@ -5431,7 +4964,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       for (final component in ordered) {
         _applyFullWidthLayout(component);
         component.y = currentY;
-        currentY += component.height + _componentVerticalSpacing;
+        currentY += component.height + componentSpacing;
       }
     });
 
@@ -5502,11 +5035,16 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text(
             'Save Template',
             style: TextStyle(
-              color: Color(0xFF673AB7),
-              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
             ),
           ),
           content: Column(
@@ -5515,7 +5053,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             children: [
               const Text(
                 'Enter a name for your template:',
-                style: TextStyle(fontSize: 16, color: Colors.black87),
+                style: TextStyle(fontSize: 14, color: Colors.black54),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -5523,13 +5061,20 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Template name...',
+                  hintStyle: const TextStyle(color: Colors.grey),
+                  filled: true,
+                  fillColor: const Color(0xFFF8F9FA),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF673AB7)),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF673AB7), width: 2),
+                    borderSide: const BorderSide(color: Colors.orange, width: 2),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
@@ -5544,10 +5089,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[600],
               ),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -5561,8 +5106,11 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF673AB7),
+                backgroundColor: Colors.grey[600],
                 foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: const Text('Save'),
             ),
