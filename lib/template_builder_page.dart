@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'widgets/draggable_template_components.dart';
@@ -28,7 +29,18 @@ class BuilderComponent {
 }
 
 class TemplateBuilderPage extends StatefulWidget {
-  const TemplateBuilderPage({Key? key}) : super(key: key);
+  final Map<String, dynamic>? existingTemplate;
+  final String? templateId;
+  final String? currentUserId;
+  final String? currentUserRole;
+  
+  const TemplateBuilderPage({
+    Key? key,
+    this.existingTemplate,
+    this.templateId,
+    this.currentUserId,
+    this.currentUserRole,
+  }) : super(key: key);
 
   @override
   State<TemplateBuilderPage> createState() => _TemplateBuilderPageState();
@@ -52,7 +64,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   Color canvasBorderColor = const Color(0xFFE5E7EB); // Light gray border
   double canvasBorderRadius = 12.0; // Curved corners
   double canvasBorderWidth = 1.0; // Visible border
-  double componentSpacing = 0.0; // Minimum gap between components by default
+  double componentSpacing = 8.0; // Default gap between components
   static const String _customGradientPresetId = 'custom_gradient';
   static const String _defaultGradientDirection = 'diagonal';
   static const Map<String, List<Alignment>> _gradientDirectionPresets = {
@@ -83,6 +95,11 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   String? _editingComponentId;
   TextEditingController? _inlineEditorController;
   final FocusNode _inlineEditorFocusNode = FocusNode();
+
+  // Editing mode tracking
+  bool _isEditingExistingTemplate = false;
+  String? _currentTemplateId;
+  String? _originalTemplateName;
 
   // Auto-alignment
   bool _autoAlignEnabled = true;
@@ -235,6 +252,53 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     _templateNameController.text = 'My Custom Template';
     _inlineEditorFocusNode.addListener(_handleInlineEditorFocusChange);
     _initializeDefaultCanvasState();
+    
+    // Load existing template if provided
+    if (widget.existingTemplate != null) {
+      _loadExistingTemplate();
+    }
+  }
+
+  // Auto-align and fit all components on canvas
+  void _autoAlignComponents() {
+    if (_canvasComponents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No components to align'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      const double padding = 20.0; // Padding from canvas edges
+      const double spacing = 12.0; // Spacing between components
+      double currentY = padding;
+
+      // Sort components by their current Y position to maintain relative order
+      final sortedComponents = List<BuilderComponent>.from(_canvasComponents)
+        ..sort((a, b) => a.y.compareTo(b.y));
+
+      for (var component in sortedComponents) {
+        // Center horizontally on canvas
+        component.x = (canvasWidth - component.width) / 2;
+        
+        // Position vertically with spacing
+        component.y = currentY;
+        
+        // Move to next position
+        currentY += component.height + spacing;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${_canvasComponents.length} components aligned and centered'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
@@ -269,7 +333,19 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         ),
         centerTitle: false,
         actions: [
-          // Settings button hidden as requested
+          // Auto Align button
+          IconButton(
+            onPressed: _isLoading ? null : _autoAlignComponents,
+            icon: const Icon(Icons.align_vertical_center, color: Colors.grey),
+            tooltip: 'Auto Align & Center',
+          ),
+          // Post button (for publishing/sharing templates)
+          IconButton(
+            onPressed: _isLoading ? null : _postTemplate,
+            icon: const Icon(Icons.send, color: Colors.grey),
+            tooltip: 'Post Template',
+          ),
+          // Save button
           IconButton(
             onPressed: _isLoading ? null : _saveTemplate,
             icon: _isLoading 
@@ -398,6 +474,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       {'type': ComponentType.textLabel, 'icon': Icons.text_fields, 'tooltip': 'Text Label'},
       {'type': ComponentType.textBox, 'icon': Icons.text_snippet, 'tooltip': 'Text Box'},
       {'type': ComponentType.gradientDivider, 'icon': Icons.horizontal_rule, 'tooltip': 'Divider'},
+      {'type': ComponentType.multipleChoice, 'icon': Icons.quiz, 'tooltip': 'Multiple Choice Question'},
     ];
 
     return Positioned(
@@ -509,6 +586,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       ComponentType.coloredContainer: {'icon': Icons.rectangle, 'label': 'Colored Box'},
       ComponentType.calendar: {'icon': Icons.date_range, 'label': 'Calendar'},
       ComponentType.gradientDivider: {'icon': Icons.horizontal_rule, 'label': 'Divider'},
+      ComponentType.multipleChoice: {'icon': Icons.quiz, 'label': 'Multiple Choice'},
     };
     
     return components[type] ?? {'icon': Icons.help_outline, 'label': 'Unknown'};
@@ -534,6 +612,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         return 'Calendar';
       case ComponentType.gradientDivider:
         return 'Gradient Divider';
+      case ComponentType.multipleChoice:
+        return 'Multiple Choice Question';
     }
     return 'Component';
   }
@@ -781,7 +861,34 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             ],
           ),
         )
-        ..add(const SizedBox(height: 12))
+        ..add(const SizedBox(height: 12));
+      
+      // Add Question color option ABOVE Text color for Multiple Choice
+      if (component.type == ComponentType.multipleChoice) {
+        final int? questionColorValue = component.properties['questionColor'] is int
+            ? component.properties['questionColor'] as int
+            : null;
+        final Color questionColor = Color(questionColorValue ?? 0xFF1565C0);
+        
+        body.add(
+          _buildPanelListTile(
+            icon: Icons.help_outline,
+            title: 'Question color',
+            subtitle: _formatColorLabel(questionColor),
+            onTap: () => _handlePropertySelection(component, 'question_color'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildColorSwatch(questionColor),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+              ],
+            ),
+          ),
+        );
+      }
+      
+      body
         ..add(
           _buildPanelListTile(
             icon: Icons.format_color_text,
@@ -836,6 +943,44 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             title: 'Change date',
             subtitle: _formatDateSummary(component),
             onTap: () => _handlePropertySelection(component, 'change_date'),
+          ),
+        );
+    }
+
+    if (component.type == ComponentType.multipleChoice) {
+      if (body.isNotEmpty) {
+        body.add(const SizedBox(height: 24));
+      }
+      
+      final int? backgroundColorValue = component.properties['backgroundColor'] is int
+          ? component.properties['backgroundColor'] as int
+          : null;
+      final Color backgroundColor = Color(backgroundColorValue ?? 0x00FFFFFF); // Default transparent
+      
+      body
+        ..add(_buildPanelSectionTitle('Multiple Choice Style'))
+        ..add(
+          _buildPanelListTile(
+            icon: Icons.palette,
+            title: 'Background color',
+            subtitle: _formatColorLabel(backgroundColor),
+            onTap: () => _handlePropertySelection(component, 'background_color'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildColorSwatch(backgroundColor),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+              ],
+            ),
+          ),
+        )
+        ..add(
+          _buildPanelListTile(
+            icon: Icons.border_style,
+            title: 'Border & style',
+            subtitle: 'Border color, width, radius',
+            onTap: () => _handlePropertySelection(component, 'border_style'),
           ),
         );
     }
@@ -1111,6 +1256,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   String _formatColorLabel(Color color) {
+    if (color.alpha == 0) {
+      return 'Transparent';
+    }
     final int rgb = color.value & 0xFFFFFF;
     return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
   }
@@ -1129,6 +1277,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           width: 1.2,
         ),
       ),
+      child: color.alpha == 0 
+        ? Icon(
+            Icons.clear,
+            color: Colors.grey.shade600,
+            size: 16,
+          )
+        : null,
     );
   }
 
@@ -1472,7 +1627,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                   _isDraggingComponent = false;
                 });
                 if (_autoAlignEnabled) {
-                  _performAutoAlignment();
+                  // Use overlap resolution instead of full auto-alignment for smoother experience
+                  _resolveOverlaps();
+                } else {
+                  _updateCanvasSize();
                 }
               },
         onPanCancel: isEditing
@@ -1491,13 +1649,18 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           }
         },
         onDoubleTap: () {
-          if (_canInlineEdit(component)) {
+          if (component.type == ComponentType.multipleChoice) {
+            _showEditDialog(component);
+          } else if (_canInlineEdit(component)) {
             _startInlineTextEditing(component);
           }
         },
         child: Container(
           width: component.width,
-          height: component.height,
+          height: component.type == ComponentType.multipleChoice ? null : component.height,
+          constraints: component.type == ComponentType.multipleChoice 
+              ? BoxConstraints(minHeight: component.height)
+              : null,
           decoration: BoxDecoration(
             border: isSelected ? Border.all(
               color: Colors.grey.shade400,
@@ -1545,6 +1708,12 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                       ),
                     ),
                   ),
+                ),
+                // Edit button (bottom-right, left of resize handle)
+                Positioned(
+                  bottom: 6,
+                  right: 64, // Increased spacing from resize handle for better gap
+                  child: _buildEditButton(component),
                 ),
                 // Resize handle (bottom-right)
                 Positioned(
@@ -1623,6 +1792,85 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           ),
         );
       
+      case ComponentType.multipleChoice:
+        final question = component.properties['question'] ?? 'Double tap to edit the question';
+        final options = (component.properties['options'] as List<dynamic>?)?.cast<String>() ?? ['Option 1', 'Option 2'];
+        final fontSize = (component.properties['fontSize'] ?? 14.0).toDouble();
+        final textColor = Color(component.properties['textColor'] ?? 0xFF000000);
+        final questionColor = Color(component.properties['questionColor'] ?? 0xFF1565C0);
+        final fontFamily = component.properties['fontFamily'] ?? 'Roboto';
+        final padding = (component.properties['padding'] ?? 12.0).toDouble();
+        final borderRadius = (component.properties['borderRadius'] ?? 8.0).toDouble();
+        final backgroundColor = Color(component.properties['backgroundColor'] ?? 0xFFF8F9FA);
+        final showBorder = component.properties['showBorder'] ?? true;
+        final borderColor = Color(component.properties['borderColor'] ?? 0xFFE0E0E0);
+        final borderWidth = (component.properties['borderWidth'] ?? 1.0).toDouble();
+        final checkboxSize = (component.properties['checkboxSize'] ?? 20.0).toDouble();
+        final spacing = (component.properties['spacing'] ?? 8.0).toDouble();
+
+        return IntrinsicHeight(
+          child: Container(
+            width: component.width,
+            constraints: BoxConstraints(
+              minHeight: component.height,
+            ),
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: showBorder ? Border.all(color: borderColor, width: borderWidth) : null,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Question text
+                Text(
+                  question,
+                  style: GoogleFonts.getFont(
+                    fontFamily,
+                    fontSize: fontSize + 2,
+                    fontWeight: FontWeight.w600,
+                    color: questionColor,
+                  ),
+                  maxLines: null, // Allow text to wrap
+                  overflow: TextOverflow.visible,
+                ),
+                SizedBox(height: spacing),
+                // Options with checkboxes in row layout
+                Wrap(
+                  spacing: spacing * 2,
+                  runSpacing: spacing,
+                  children: options.take(4).map((option) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: checkboxSize,
+                          height: checkboxSize,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: textColor, width: 1.5),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        SizedBox(width: spacing / 2),
+                        Text(
+                          option,
+                          style: GoogleFonts.getFont(
+                            fontFamily,
+                            fontSize: fontSize,
+                            color: textColor,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      
       default:
         return Container(
           color: Colors.grey.shade200,
@@ -1664,6 +1912,70 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, size: 16, color: resolvedIconColor),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleComponentEdit(BuilderComponent component) {
+    switch (component.type) {
+      case ComponentType.multipleChoice:
+        _showEditDialog(component);
+        break;
+      case ComponentType.textLabel:
+      case ComponentType.textBox:
+        _handlePropertySelection(component, 'inline_text_edit');
+        break;
+      case ComponentType.dateContainer:
+        _handlePropertySelection(component, 'date_picker');
+        break;
+      case ComponentType.imageContainer:
+        _handlePropertySelection(component, 'image_source');
+        break;
+      case ComponentType.calendar:
+        _handlePropertySelection(component, 'calendar_settings');
+        break;
+      case ComponentType.iconContainer:
+        _handlePropertySelection(component, 'icon_selection');
+        break;
+      case ComponentType.woodenContainer:
+      case ComponentType.coloredContainer:
+        _handlePropertySelection(component, 'container_style');
+        break;
+      case ComponentType.gradientDivider:
+        _handlePropertySelection(component, 'divider_style');
+        break;
+      default:
+        // For other components, show a generic edit dialog
+        _handlePropertySelection(component, 'text_edit');
+        break;
+    }
+  }
+
+  Widget _buildEditButton(BuilderComponent component) {
+    return Tooltip(
+      message: 'Edit component',
+      child: GestureDetector(
+        onTap: () => _handleComponentEdit(component),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.blue.shade600,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.edit,
+            color: Colors.white,
+            size: 18,
           ),
         ),
       ),
@@ -1729,7 +2041,72 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   bool _canInlineEdit(BuilderComponent component) {
-    return component.type == ComponentType.textLabel || component.type == ComponentType.textBox;
+    return component.type == ComponentType.textLabel || 
+           component.type == ComponentType.textBox || 
+           component.type == ComponentType.multipleChoice;
+  }
+
+  void _showEditDialog(BuilderComponent component) {
+    if (component.type == ComponentType.multipleChoice) {
+      final multipleChoiceComponent = MultipleChoiceComponent(
+        id: component.id,
+        x: component.x,
+        y: component.y,
+        properties: component.properties,
+      );
+      
+      showDialog(
+        context: context,
+        builder: (context) => multipleChoiceComponent.buildEditDialog(
+          context,
+          (updatedProperties) {
+            setState(() {
+              component.properties = updatedProperties;
+              // Update height based on new content
+              _updateMultipleChoiceHeight(component);
+            });
+          },
+        ),
+      );
+    }
+  }
+
+  double _calculateMultipleChoiceHeight(BuilderComponent component) {
+    final question = component.properties['question'] ?? 'Double tap to edit the question';
+    final options = (component.properties['options'] as List<dynamic>?)?.cast<String>() ?? ['Option 1', 'Option 2'];
+    final fontSize = (component.properties['fontSize'] ?? 14.0).toDouble();
+    final padding = (component.properties['padding'] ?? 12.0).toDouble();
+    final spacing = (component.properties['spacing'] ?? 8.0).toDouble();
+    final checkboxSize = (component.properties['checkboxSize'] ?? 20.0).toDouble();
+    
+    // Calculate question height (assuming it can wrap to 2-3 lines max)
+    final questionHeight = (fontSize + 2) * 1.2 * 2; // Question font size + line height
+    
+    // Calculate options height (horizontal wrap layout)
+    final optionHeight = math.max<double>(checkboxSize, fontSize * 1.2);
+    final numberOfRows = ((options.length + 1) / 2).ceil(); // +1 for "Add Choice" button, 2 per row
+    final optionsHeight = numberOfRows * (optionHeight + spacing);
+    
+    // Total height: padding + question + spacing + options + padding
+    final totalHeight = padding * 2 + questionHeight + spacing + optionsHeight;
+    
+    return math.max(totalHeight, 120.0); // Minimum 120px
+  }
+
+  void _updateMultipleChoiceHeight(BuilderComponent component, {bool skipOverlapResolution = false}) {
+    if (component.type == ComponentType.multipleChoice) {
+      final oldHeight = component.height;
+      final newHeight = _calculateMultipleChoiceHeight(component);
+      component.height = newHeight;
+      
+      // If height changed and auto-alignment is enabled, resolve overlaps
+      // Skip if called from component addition (to avoid double-triggering)
+      if (!skipOverlapResolution && (newHeight - oldHeight).abs() > 1.0 && _autoAlignEnabled) {
+        _resolveOverlaps();
+      } else if (!skipOverlapResolution) {
+        _updateCanvasSize();
+      }
+    }
   }
 
   double _defaultFontSizeFor(BuilderComponent component) {
@@ -2193,6 +2570,150 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     canvasHeight = math.max(minCanvasHeight, requiredHeight);
   }
 
+  /// Load existing template data for editing
+  void _loadExistingTemplate() {
+    if (widget.existingTemplate == null) return;
+    
+    final templateData = widget.existingTemplate!;
+    
+    setState(() {
+      _isEditingExistingTemplate = true;
+      _currentTemplateId = widget.templateId;
+      _originalTemplateName = templateData['templateName'] as String?;
+      
+      // Load template name
+      _templateNameController.text = _originalTemplateName ?? 'Untitled Template';
+      
+      // Load canvas properties
+      canvasWidth = (templateData['canvasWidth'] as num?)?.toDouble() ?? 400.0;
+      canvasHeight = (templateData['canvasHeight'] as num?)?.toDouble() ?? 360.0;
+      
+      // Load canvas background
+      if (templateData['canvasBackgroundColor'] != null) {
+        canvasBackgroundColor = Color(templateData['canvasBackgroundColor'] as int);
+      }
+      
+      // Load canvas border properties
+      if (templateData['canvasBorderColor'] != null) {
+        canvasBorderColor = Color(templateData['canvasBorderColor'] as int);
+      }
+      if (templateData['canvasBorderWidth'] != null) {
+        canvasBorderWidth = (templateData['canvasBorderWidth'] as num).toDouble();
+      }
+      if (templateData['canvasBorderRadius'] != null) {
+        canvasBorderRadius = (templateData['canvasBorderRadius'] as num).toDouble();
+      }
+      
+      // Load background mode
+      useGradientBackground = (templateData['canvasBackgroundMode'] as String?) == 'gradient';
+      
+      // Load gradient if available
+      if (useGradientBackground && templateData['canvasBackgroundGradient'] != null) {
+        final gradientData = templateData['canvasBackgroundGradient'] as Map<String, dynamic>;
+        _loadGradientFromData(gradientData);
+      }
+      
+      // Load components
+      _canvasComponents.clear();
+      if (templateData['components'] != null) {
+        final componentsData = templateData['components'] as List;
+        for (final componentData in componentsData) {
+          final component = _buildComponentFromData(componentData as Map<String, dynamic>);
+          if (component != null) {
+            _canvasComponents.add(component);
+          }
+        }
+      }
+      
+      // If no components loaded, don't add default placeholder
+      if (_canvasComponents.isEmpty) {
+        _canvasComponents = [];
+      }
+    });
+  }
+
+  /// Load gradient from saved data
+  void _loadGradientFromData(Map<String, dynamic> gradientData) {
+    try {
+      final colors = (gradientData['colors'] as List).map((c) => Color(c as int)).toList();
+      final beginData = gradientData['begin'] as Map<String, dynamic>;
+      final endData = gradientData['end'] as Map<String, dynamic>;
+      final direction = gradientData['direction'] as String? ?? 'diagonal';
+      
+      final begin = Alignment(beginData['x'] as double, beginData['y'] as double);
+      final end = Alignment(endData['x'] as double, endData['y'] as double);
+      
+      _customGradientStartColor = colors.isNotEmpty ? colors.first : _customGradientStartColor;
+      _customGradientEndColor = colors.length > 1 ? colors[1] : _customGradientEndColor;
+      _customGradientDirection = direction;
+      
+      canvasBackgroundGradient = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: colors,
+        stops: gradientData['stops'] != null 
+            ? List<double>.from(gradientData['stops'] as List)
+            : null,
+      );
+    } catch (e) {
+      // Error loading gradient
+    }
+  }
+
+  /// Build component from saved data
+  BuilderComponent? _buildComponentFromData(Map<String, dynamic> data) {
+    try {
+      final typeString = data['type'] as String;
+      final ComponentType? type = _parseComponentType(typeString);
+      if (type == null) return null;
+      
+      final position = data['position'] as Map<String, dynamic>;
+      final size = data['size'] as Map<String, dynamic>;
+      final properties = Map<String, dynamic>.from(data['properties'] as Map? ?? {});
+      
+      return BuilderComponent(
+        id: data['id'] as String,
+        type: type,
+        x: (position['x'] as num).toDouble(),
+        y: (position['y'] as num).toDouble(),
+        width: (size['width'] as num).toDouble(),
+        height: (size['height'] as num).toDouble(),
+        properties: properties,
+      );
+    } catch (e) {
+      // Error building component from data
+      return null;
+    }
+  }
+
+  /// Parse component type from string
+  ComponentType? _parseComponentType(String typeString) {
+    switch (typeString) {
+      case 'ComponentType.calendar':
+        return ComponentType.calendar;
+      case 'ComponentType.dateContainer':
+        return ComponentType.dateContainer;
+      case 'ComponentType.textLabel':
+        return ComponentType.textLabel;
+      case 'ComponentType.textBox':
+        return ComponentType.textBox;
+      case 'ComponentType.woodenContainer':
+        return ComponentType.woodenContainer;
+      case 'ComponentType.coloredContainer':
+        return ComponentType.coloredContainer;
+      case 'ComponentType.imageContainer':
+        return ComponentType.imageContainer;
+      case 'ComponentType.iconContainer':
+        return ComponentType.iconContainer;
+      case 'ComponentType.gradientDivider':
+        return ComponentType.gradientDivider;
+      case 'ComponentType.multipleChoice':
+        return ComponentType.multipleChoice;
+      default:
+        return null;
+    }
+  }
+
   void _handleInlineEditorFocusChange() {
     if (_editingComponentId != null && !_inlineEditorFocusNode.hasFocus) {
       _stopInlineEditing(save: true);
@@ -2239,6 +2760,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
 
     return maxBottom + componentSpacing;
+  }
+
+  double _getComponentSpacing(BuilderComponent? component) {
+    if (component?.type == ComponentType.multipleChoice) {
+      return componentSpacing + 4.0; // Extra spacing for multiple choice components
+    }
+    return componentSpacing;
   }
 
   TextStyle _resolveTextStyle(BuilderComponent component) {
@@ -2864,6 +3392,15 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       case 'change_date':
         _showInlineDatePicker(component);
         break;
+      case 'background_color':
+        _showComponentBackgroundColorPicker(component);
+        break;
+      case 'question_color':
+        _showQuestionColorPicker(component);
+        break;
+      case 'border_style':
+        _showBorderStyleEditor(component);
+        break;
     }
   }
 
@@ -2896,6 +3433,198 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       }
     });
     _updateCanvasSize();
+  }
+
+  Future<void> _showComponentBackgroundColorPicker(BuilderComponent component) async {
+    final currentColorValue = component.properties['backgroundColor'] ?? 0x00FFFFFF; // Default transparent
+    final currentColor = Color(currentColorValue);
+
+    final Color? selectedColor = await _showAdvancedColorPicker(
+      context,
+      currentColor,
+      'Pick Background Color',
+    );
+
+    if (!mounted || selectedColor == null) {
+      return;
+    }
+
+    setState(() {
+      // Find the component in the main list and update it
+      final componentIndex = _canvasComponents.indexWhere((c) => c.id == component.id);
+      
+      if (componentIndex != -1) {
+        _canvasComponents[componentIndex].properties['backgroundColor'] = selectedColor.value;
+      } else {
+        // Fallback to direct component update
+        component.properties['backgroundColor'] = selectedColor.value;
+      }
+    });
+    _updateCanvasSize();
+  }
+
+  Future<void> _showQuestionColorPicker(BuilderComponent component) async {
+    final currentColorValue = component.properties['questionColor'] ?? 0xFF1565C0; // Default blue
+    final currentColor = Color(currentColorValue);
+
+    final Color? selectedColor = await _showAdvancedColorPicker(
+      context,
+      currentColor,
+      'Pick Question Text Color',
+    );
+
+    if (!mounted || selectedColor == null) {
+      return;
+    }
+
+    setState(() {
+      // Find the component in the main list and update it
+      final componentIndex = _canvasComponents.indexWhere((c) => c.id == component.id);
+      
+      if (componentIndex != -1) {
+        _canvasComponents[componentIndex].properties['questionColor'] = selectedColor.value;
+      } else {
+        // Fallback to direct component update
+        component.properties['questionColor'] = selectedColor.value;
+      }
+    });
+    _updateCanvasSize();
+  }
+
+  Future<void> _showBorderStyleEditor(BuilderComponent component) async {
+    // Get current border properties
+    bool showBorder = component.properties['showBorder'] ?? true;
+    Color borderColor = Color(component.properties['borderColor'] ?? 0xFFE0E0E0);
+    double borderWidth = (component.properties['borderWidth'] ?? 1.0).toDouble();
+    double borderRadius = (component.properties['borderRadius'] ?? 8.0).toDouble();
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Border & Style'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Show Border Toggle
+                Row(
+                  children: [
+                    const Expanded(child: Text('Show Border')),
+                    Switch(
+                      value: showBorder,
+                      onChanged: (value) {
+                        setState(() {
+                          showBorder = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Border Color
+                if (showBorder) ...[
+                  Row(
+                    children: [
+                      const Expanded(child: Text('Border Color')),
+                      GestureDetector(
+                        onTap: () async {
+                          final result = await showColorPickerDialog(
+                            context: context,
+                            initialColor: borderColor,
+                            title: 'Border Color',
+                          );
+                          if (result != null) {
+                            setState(() {
+                              borderColor = result;
+                            });
+                          }
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: borderColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Border Width
+                  Text('Border Width: ${borderWidth.toStringAsFixed(1)}'),
+                  Slider(
+                    value: borderWidth,
+                    min: 0.5,
+                    max: 10.0,
+                    divisions: 19,
+                    onChanged: (value) {
+                      setState(() {
+                        borderWidth = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                
+                // Border Radius
+                Text('Corner Radius: ${borderRadius.toStringAsFixed(1)}'),
+                Slider(
+                  value: borderRadius,
+                  min: 0.0,
+                  max: 30.0,
+                  divisions: 30,
+                  onChanged: (value) {
+                    setState(() {
+                      borderRadius = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                // Update component properties
+                final componentIndex = _canvasComponents.indexWhere((c) => c.id == component.id);
+                if (componentIndex != -1) {
+                  this.setState(() {
+                    _canvasComponents[componentIndex].properties['showBorder'] = showBorder;
+                    _canvasComponents[componentIndex].properties['borderColor'] = borderColor.value;
+                    _canvasComponents[componentIndex].properties['borderWidth'] = borderWidth;
+                    _canvasComponents[componentIndex].properties['borderRadius'] = borderRadius;
+                  });
+                } else {
+                  this.setState(() {
+                    component.properties['showBorder'] = showBorder;
+                    component.properties['borderColor'] = borderColor.value;
+                    component.properties['borderWidth'] = borderWidth;
+                    component.properties['borderRadius'] = borderRadius;
+                  });
+                }
+                _updateCanvasSize();
+                Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade600,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showTextStyleEditor(BuilderComponent component) async {
@@ -4280,9 +5009,18 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     setState(() {
       _canvasComponents.add(component);
+      // Update height for multiple choice components based on content
+      if (type == ComponentType.multipleChoice) {
+        _updateMultipleChoiceHeight(component, skipOverlapResolution: true);
+      }
     });
 
-    _updateCanvasSize();
+    // Resolve any overlaps that may have been created
+    if (_autoAlignEnabled) {
+      _resolveOverlaps();
+    } else {
+      _updateCanvasSize();
+    }
   }
 
   void _addComponentToCanvasMobile(ComponentType type) {
@@ -4304,9 +5042,18 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     setState(() {
       _canvasComponents.add(component);
+      // Update height for multiple choice components based on content
+      if (type == ComponentType.multipleChoice) {
+        _updateMultipleChoiceHeight(component, skipOverlapResolution: true);
+      }
     });
 
-    _updateCanvasSize();
+    // Resolve any overlaps that may have been created
+    if (_autoAlignEnabled) {
+      _resolveOverlaps();
+    } else {
+      _updateCanvasSize();
+    }
   }
 
   void _addComponentToCanvasTablet(ComponentType type) {
@@ -4328,9 +5075,18 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
     setState(() {
       _canvasComponents.add(component);
+      // Update height for multiple choice components based on content
+      if (type == ComponentType.multipleChoice) {
+        _updateMultipleChoiceHeight(component, skipOverlapResolution: true);
+      }
     });
 
-    _updateCanvasSize();
+    // Resolve any overlaps that may have been created
+    if (_autoAlignEnabled) {
+      _resolveOverlaps();
+    } else {
+      _updateCanvasSize();
+    }
   }
 
   Map<String, dynamic> _getDefaultProperties(ComponentType type) {
@@ -4388,6 +5144,23 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           'cornerRadius': 2.0,
           'padding': 0.0, // No padding
         };
+      case ComponentType.multipleChoice:
+        return {
+          'question': 'Double tap to edit the question',
+          'options': ['Option 1', 'Option 2'],
+          'fontSize': 14.0,
+          'textColor': 0xFF000000,
+          'questionColor': 0xFF1565C0,
+          'fontFamily': 'Roboto',
+          'padding': 12.0,
+          'borderRadius': 8.0,
+          'backgroundColor': 0x00000000, // Transparent background by default
+          'showBorder': true,
+          'borderColor': 0xFFE0E0E0,
+          'borderWidth': 1.0,
+          'checkboxSize': 20.0,
+          'spacing': 8.0,
+        };
       default:
         return {};
     }
@@ -4412,6 +5185,8 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         return 160.0;
       case ComponentType.calendar:
         return 220.0;
+      case ComponentType.multipleChoice:
+        return 120.0; // Minimum height, will auto-expand based on content
       default:
         return 100.0;
     }
@@ -4964,10 +5739,41 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
       for (final component in ordered) {
         _applyFullWidthLayout(component);
         component.y = currentY;
-        currentY += component.height + componentSpacing;
+        currentY += component.height + _getComponentSpacing(component);
       }
     });
 
+    _updateCanvasSize();
+  }
+
+  void _resolveOverlaps() {
+    if (_canvasComponents.isEmpty) return;
+    
+    // Sort components by Y position
+    final List<BuilderComponent> components = List.of(_canvasComponents)
+      ..sort((a, b) => a.y.compareTo(b.y));
+    
+    setState(() {
+      for (int i = 0; i < components.length; i++) {
+        final current = components[i];
+        
+        // Check for overlaps with previous components
+        for (int j = 0; j < i; j++) {
+          final previous = components[j];
+          
+          // Check if current component overlaps with previous component
+          final currentBottom = current.y + current.height;
+          final previousBottom = previous.y + previous.height;
+          final requiredSpacing = _getComponentSpacing(previous);
+          
+          // If there's an overlap, move current component down
+          if (current.y < previousBottom + requiredSpacing) {
+            current.y = previousBottom + requiredSpacing;
+          }
+        }
+      }
+    });
+    
     _updateCanvasSize();
   }
 
@@ -5026,11 +5832,13 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     });
   }
 
-  Future<String?> _showTemplateNameDialog() async {
+  Future<Map<String, dynamic>?> _showTemplateNameDialog() async {
     final TextEditingController dialogController = TextEditingController();
-    dialogController.text = 'My Custom Template'; // Default name
+    dialogController.text = _isEditingExistingTemplate 
+        ? (_originalTemplateName ?? 'My Custom Template')
+        : 'My Custom Template'; // Default name
     
-    return showDialog<String>(
+    return showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
@@ -5039,9 +5847,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: const Text(
-            'Save Template',
-            style: TextStyle(
+          title: Text(
+            _isEditingExistingTemplate ? 'Save Changes' : 'Save Template',
+            style: const TextStyle(
               color: Colors.black87,
               fontWeight: FontWeight.w600,
               fontSize: 18,
@@ -5051,9 +5859,11 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Enter a name for your template:',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
+              Text(
+                _isEditingExistingTemplate 
+                    ? 'Choose how to save your changes:'
+                    : 'Enter a name for your template:',
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -5080,7 +5890,10 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
                 ),
                 onSubmitted: (value) {
                   if (value.trim().isNotEmpty) {
-                    Navigator.of(context).pop(value);
+                    Navigator.of(context).pop({
+                      'name': value,
+                      'action': _isEditingExistingTemplate ? 'update' : 'create'
+                    });
                   }
                 },
               ),
@@ -5094,26 +5907,79 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
               ),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
-              onPressed: () {
-                final name = dialogController.text.trim();
-                if (name.isNotEmpty) {
-                  Navigator.of(context).pop(name);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter a template name')),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey[600],
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            if (_isEditingExistingTemplate) ...[
+              ElevatedButton(
+                onPressed: () {
+                  final name = dialogController.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.of(context).pop({
+                      'name': name,
+                      'action': 'copy'
+                    });
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a template name')),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[600],
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
+                child: const Text('Save as Copy'),
               ),
-              child: const Text('Save'),
-            ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  final name = dialogController.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.of(context).pop({
+                      'name': name,
+                      'action': 'update'
+                    });
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a template name')),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[600],
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Update'),
+              ),
+            ] else ...[
+              ElevatedButton(
+                onPressed: () {
+                  final name = dialogController.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.of(context).pop({
+                      'name': name,
+                      'action': 'create'
+                    });
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a template name')),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[600],
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Save'),
+              ),
+            ],
           ],
         );
       },
@@ -5121,10 +5987,17 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
   }
 
   Future<void> _saveTemplate() async {
-    // Show dialog to get template name first
-    final templateName = await _showTemplateNameDialog();
-    if (templateName == null || templateName.trim().isEmpty) {
-      return; // User cancelled or entered empty name
+    // Show dialog to get template name and action first
+    final result = await _showTemplateNameDialog();
+    if (result == null) {
+      return; // User cancelled
+    }
+    
+    final templateName = result['name'] as String;
+    final action = result['action'] as String;
+    
+    if (templateName.trim().isEmpty) {
+      return;
     }
 
     setState(() => _isLoading = true);
@@ -5157,6 +6030,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         'canvasBackgroundMode': useGradientBackground ? 'gradient' : 'solid',
         'canvasBackgroundPresetId': _selectedBackgroundPresetId,
         'canvasBackgroundGradient': gradientData,
+        'canvasBorderColor': canvasBorderColor.value,
+        'canvasBorderWidth': canvasBorderWidth,
+        'canvasBorderRadius': canvasBorderRadius,
         'components': _canvasComponents.map((component) => {
           'id': component.id,
           'type': component.type.toString(),
@@ -5164,23 +6040,51 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           'size': {'width': component.width, 'height': component.height},
           'properties': component.properties,
         }).toList(),
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': action == 'update' ? null : FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Save to Firestore
-      await FirebaseFirestore.instance
-          .collection('custom_templates')
-          .add(templateData);
+      // Debug: Print border values being saved
+      print('💾 SAVING Template - Border: color=0x${canvasBorderColor.value.toRadixString(16)}, width=$canvasBorderWidth, radius=$canvasBorderRadius');
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Template saved successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      if (action == 'update' && _isEditingExistingTemplate && _currentTemplateId != null) {
+        // Update existing template
+        await FirebaseFirestore.instance
+            .collection('custom_templates')
+            .doc(_currentTemplateId!)
+            .update(templateData);
         
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Template updated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Create new template (either new or copy)
+        if (action == 'update') {
+          templateData['createdAt'] = FieldValue.serverTimestamp();
+        }
+        
+        await FirebaseFirestore.instance
+            .collection('custom_templates')
+            .add(templateData);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(action == 'copy' 
+                  ? '✅ Template copied successfully!' 
+                  : '✅ Template saved successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+      
+      if (mounted) {
         // Go back to template management
         Navigator.pop(context, true); // Pass true to indicate successful save
       }
@@ -5200,56 +6104,199 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
     }
   }
 
+  /// Post/Share template - fetches exact saved template data for 100% accuracy
+  Future<void> _postTemplate() async {
+    // Check if we have a saved template to post
+    if (!_isEditingExistingTemplate || _currentTemplateId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the template first before posting'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Show dialog to confirm posting
+    final shouldPost = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Post Template',
+            style: TextStyle(
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This will share your saved template with the school community.',
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Would you like to continue?',
+                style: TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[600],
+              ),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Post'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldPost == true) {
+      setState(() => _isLoading = true);
+      
+      try {
+        // Use passed user ID instead of Firebase Auth
+        final userId = widget.currentUserId;
+        final userRole = widget.currentUserRole ?? 'User';
+        
+        if (userId == null || userId.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Must be logged in to post template')),
+            );
+          }
+          return;
+        }
+        
+        // Fetch the exact saved template data from Firestore
+        final templateDoc = await FirebaseFirestore.instance
+            .collection('custom_templates')
+            .doc(_currentTemplateId!)
+            .get();
+            
+        if (!templateDoc.exists) {
+          throw Exception('Template not found');
+        }
+        
+        final savedTemplateData = templateDoc.data()!;
+        
+        // Get user profile from Firestore
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get();
+        
+        final userData = userDoc.data() ?? {};
+        final userName = userData['name'] ?? 'Unknown User';
+
+        // Debug: Check if border data exists in saved template
+        print('📥 LOADING from Firestore - Border: color=${savedTemplateData['canvasBorderColor']}, width=${savedTemplateData['canvasBorderWidth']}, radius=${savedTemplateData['canvasBorderRadius']}');
+
+        // Create template data for announcements using EXACT saved data
+        final templateData = {
+          'name': savedTemplateData['templateName'] ?? 'Custom Template',
+          'templateName': savedTemplateData['templateName'] ?? 'Custom Template',
+          'canvasWidth': savedTemplateData['canvasWidth'],
+          'canvasHeight': savedTemplateData['canvasHeight'],
+          'canvasBackgroundColor': savedTemplateData['canvasBackgroundColor'],
+          'canvasBackgroundMode': savedTemplateData['canvasBackgroundMode'],
+          'canvasBackgroundGradient': savedTemplateData['canvasBackgroundGradient'],
+          'canvasBorderColor': savedTemplateData['canvasBorderColor'],
+          'canvasBorderWidth': savedTemplateData['canvasBorderWidth'],
+          'canvasBorderRadius': savedTemplateData['canvasBorderRadius'],
+          'components': (savedTemplateData['components'] as List).map((component) => {
+            'id': component['id'],
+            'type': component['type'],
+            'x': component['position']['x'], 
+            'y': component['position']['y'],
+            'width': component['size']['width'],
+            'height': component['size']['height'],
+            'properties': Map<String, dynamic>.from(component['properties'] ?? {}),
+          }).toList(),
+        };
+
+        // Debug: Verify border data is in templateData being posted
+        print('📤 POSTING to Announcements - Border: color=${templateData['canvasBorderColor']}, width=${templateData['canvasBorderWidth']}, radius=${templateData['canvasBorderRadius']}');
+
+        // Post to communications collection as custom template announcement
+        await FirebaseFirestore.instance.collection('communications').add({
+          'message': 'Custom template announcement',
+          'title': savedTemplateData['templateName'] ?? 'Custom Template',
+          'description': 'Posted from Template Builder',
+          'senderId': userId,
+          'senderName': userName,
+          'senderRole': userRole,
+          'timestamp': FieldValue.serverTimestamp(),
+          'templateType': 'custom',
+          'templateData': templateData,
+          'reactions': <String, dynamic>{},
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🚀 Template posted to announcements successfully!'),
+              backgroundColor: Colors.blue,
+              action: SnackBarAction(
+                label: 'View',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.of(context).pushReplacementNamed('/announcements');
+                },
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error posting template: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    }
+  }
+
   /// Shows an advanced HSV color picker dialog with square color area
   Future<Color?> _showAdvancedColorPicker(
     BuildContext context,
     Color initialColor,
     String title,
   ) async {
-    Color selectedColor = initialColor;
-
-    return showDialog<Color>(
+    // Use the enhanced color picker dialog with transparent options
+    return await showColorPickerDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(title),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 300,
-              height: 400,
-              child: ColorPicker(
-                pickerColor: selectedColor,
-                onColorChanged: (Color color) {
-                  selectedColor = color;
-                },
-                displayThumbColor: true,
-                enableAlpha: false,
-                pickerAreaHeightPercent: 0.8,
-                labelTypes: const [],
-                paletteType: PaletteType.hsv,
-              ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop(null);
-              },
-            ),
-            ElevatedButton(
-              child: const Text('Select'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey.shade600,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(context).pop(selectedColor);
-              },
-            ),
-          ],
-        );
-      },
+      initialColor: initialColor,
+      title: title,
     );
   }
 }

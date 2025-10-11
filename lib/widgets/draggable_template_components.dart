@@ -86,6 +86,7 @@ enum ComponentType {
   imageContainer,
   iconContainer,
   gradientDivider,
+  multipleChoice,
 }
 
 // Base class for all draggable components
@@ -131,6 +132,8 @@ abstract class DraggableComponent {
         return IconContainerComponent.fromJson(json);
       case 'gradientDivider':
         return GradientDividerComponent.fromJson(json);
+      case 'multipleChoice':
+        return MultipleChoiceComponent.fromJson(json);
       default:
         throw Exception('Unknown component type: ${json['type']}');
     }
@@ -661,6 +664,49 @@ class TextLabelComponent extends DraggableComponent {
                   ),
                   maxLines: 2,
                 ),
+                const SizedBox(height: 8),
+                // Language buttons
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildLanguageButton(
+                      context,
+                      'English',
+                      'Hello',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'اردو',
+                      'خوش آمدید',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'हिंदी',
+                      'स्वागत',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'العربية',
+                      'مرحبا',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'తెలుగు',
+                      'స్వాగతం',
+                      textController,
+                      setState,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -740,6 +786,32 @@ class TextLabelComponent extends DraggableComponent {
           ],
         );
       },
+    );
+  }
+
+  // Helper method to build language button
+  Widget _buildLanguageButton(
+    BuildContext context,
+    String label,
+    String sampleText,
+    TextEditingController controller,
+    StateSetter setState,
+  ) {
+    return ElevatedButton(
+      onPressed: () {
+        controller.text = sampleText;
+        setState(() {});
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.blue.shade50,
+        foregroundColor: Colors.blue.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        elevation: 0,
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 13)),
     );
   }
 
@@ -1017,6 +1089,49 @@ class TextBoxComponent extends DraggableComponent {
                   ),
                   maxLines: 5,
                   onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 8),
+                // Language buttons
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildLanguageButton(
+                      context,
+                      'English',
+                      'Hello, Welcome!',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'اردو',
+                      'خوش آمدید',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'हिंदी',
+                      'स्वागत है',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'العربية',
+                      'مرحبا بكم',
+                      textController,
+                      setState,
+                    ),
+                    _buildLanguageButton(
+                      context,
+                      'తెలుగు',
+                      'స్వాగతం',
+                      textController,
+                      setState,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 const Text('Preview', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -1303,6 +1418,32 @@ class TextBoxComponent extends DraggableComponent {
           ),
         );
       },
+    );
+  }
+
+  // Helper method to build language button
+  Widget _buildLanguageButton(
+    BuildContext context,
+    String label,
+    String sampleText,
+    TextEditingController controller,
+    StateSetter setState,
+  ) {
+    return ElevatedButton(
+      onPressed: () {
+        controller.text = sampleText;
+        setState(() {});
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.blue.shade50,
+        foregroundColor: Colors.blue.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        elevation: 0,
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 13)),
     );
   }
 
@@ -2213,6 +2354,464 @@ class GradientDividerComponent extends DraggableComponent {
 
   factory GradientDividerComponent.fromJson(Map<String, dynamic> json) {
     return GradientDividerComponent(
+      id: json['id'],
+      x: json['x']?.toDouble() ?? 0,
+      y: json['y']?.toDouble() ?? 0,
+      properties: json['properties'],
+    );
+  }
+}
+
+// Multiple Choice Question Component
+class MultipleChoiceComponent extends DraggableComponent {
+  MultipleChoiceComponent({
+    required String id,
+    required double x,
+    required double y,
+    Map<String, dynamic>? properties,
+  }) : super(
+          id: id,
+          type: ComponentType.multipleChoice,
+          x: x,
+          y: y,
+          width: 280,
+          height: 120, // Minimum height, will auto-expand
+          properties: properties ?? {},
+        );
+
+  @override
+  Widget buildWidget() {
+    final question = properties['question'] ?? 'Double tap to edit the question';
+    final options = (properties['options'] as List<dynamic>?)?.cast<String>() ?? ['Option 1', 'Option 2'];
+    final fontSize = (properties['fontSize'] ?? 14.0).toDouble();
+    final textColor = Color(properties['textColor'] ?? 0xFF000000);
+    final questionColor = Color(properties['questionColor'] ?? 0xFF1565C0);
+    final fontFamily = properties['fontFamily'] ?? 'Roboto';
+    final padding = (properties['padding'] ?? 12.0).toDouble();
+    final borderRadius = (properties['borderRadius'] ?? 8.0).toDouble();
+    final backgroundColor = Color(properties['backgroundColor'] ?? 0x00FFFFFF); // Default transparent
+    final showBorder = properties['showBorder'] ?? true;
+    final borderColor = Color(properties['borderColor'] ?? 0xFFE0E0E0);
+    final borderWidth = (properties['borderWidth'] ?? 1.0).toDouble();
+    final checkboxSize = (properties['checkboxSize'] ?? 20.0).toDouble();
+    final spacing = (properties['spacing'] ?? 8.0).toDouble();
+
+    return IntrinsicHeight(
+      child: Container(
+        width: width,
+        constraints: BoxConstraints(
+          minHeight: height,
+        ),
+        padding: EdgeInsets.all(padding),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: showBorder ? Border.all(color: borderColor, width: borderWidth) : null,
+        ),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Question text
+              Text(
+                question,
+                style: GoogleFonts.getFont(
+                  fontFamily,
+                  fontSize: fontSize + 2,
+                  fontWeight: FontWeight.w600,
+                  color: questionColor,
+                ),
+                maxLines: null, // Allow text to wrap
+                overflow: TextOverflow.visible,
+              ),
+              SizedBox(height: spacing),
+              // Options with checkboxes in horizontal layout
+              Wrap(
+                spacing: spacing * 2,
+                runSpacing: spacing,
+                children: [
+                  ...options.take(4).map((option) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: checkboxSize,
+                          height: checkboxSize,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: textColor, width: 1.5),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        SizedBox(width: spacing / 2),
+                        Text(
+                          option,
+                          style: GoogleFonts.getFont(
+                            fontFamily,
+                            fontSize: fontSize,
+                            color: textColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                  // Add Choice button
+                  if (options.length < 6)
+                    GestureDetector(
+                      onTap: () {
+                        // This will be handled by the parent widget
+                      },
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: spacing,
+                          vertical: spacing / 2,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: questionColor.withOpacity(0.5),
+                            width: 1,
+                            style: BorderStyle.solid,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          color: questionColor.withOpacity(0.1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add,
+                              size: checkboxSize * 0.8,
+                              color: questionColor,
+                            ),
+                            SizedBox(width: spacing / 3),
+                            Text(
+                              'Add Choice',
+                              style: GoogleFonts.getFont(
+                                fontFamily,
+                                fontSize: fontSize * 0.9,
+                                color: questionColor,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+        ),
+      ),
+    );
+  }  @override
+  Widget buildEditDialog(BuildContext context, Function(Map<String, dynamic>) onUpdate) {
+    final questionController = TextEditingController(text: properties['question'] ?? 'Double tap to edit the question');
+    List<String> options = List<String>.from((properties['options'] as List<dynamic>?)?.cast<String>() ?? ['Option 1', 'Option 2']);
+    List<TextEditingController> optionControllers = options.map((option) => TextEditingController(text: option)).toList();
+    
+    // Get component styling properties
+    final fontSize = (properties['fontSize'] ?? 14.0).toDouble();
+    final textColor = Color(properties['textColor'] ?? 0xFF000000);
+    final questionColor = Color(properties['questionColor'] ?? 0xFF1565C0);
+    final fontFamily = properties['fontFamily'] ?? 'Roboto';
+    final padding = (properties['padding'] ?? 12.0).toDouble();
+    final borderRadius = (properties['borderRadius'] ?? 8.0).toDouble();
+    final backgroundColor = Color(properties['backgroundColor'] ?? 0x00000000); // Default to transparent
+    final showBorder = properties['showBorder'] ?? true;
+    final borderColor = Color(properties['borderColor'] ?? 0xFFE0E0E0);
+    final borderWidth = (properties['borderWidth'] ?? 1.0).toDouble();
+    final checkboxSize = (properties['checkboxSize'] ?? 20.0).toDouble();
+    final spacing = (properties['spacing'] ?? 8.0).toDouble();
+    
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return AlertDialog(
+          backgroundColor: Color(0xFFF8F9FA), // Fixed dialog background color
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(borderRadius),
+            side: showBorder ? BorderSide(color: borderColor, width: borderWidth) : BorderSide.none,
+          ),
+          title: Text(
+            'Edit Multiple Choice Question',
+            style: GoogleFonts.getFont(
+              fontFamily,
+              fontSize: fontSize + 4,
+              fontWeight: FontWeight.w600,
+              color: questionColor,
+            ),
+          ),
+          content: Container(
+            width: MediaQuery.of(context).size.width * 0.8,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Question section
+                  Text(
+                    'Question',
+                    style: GoogleFonts.getFont(
+                      fontFamily,
+                      fontSize: fontSize + 1,
+                      fontWeight: FontWeight.w600,
+                      color: questionColor,
+                    ),
+                  ),
+                  SizedBox(height: spacing),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(borderRadius * 0.7),
+                      border: Border.all(color: borderColor, width: borderWidth),
+                    ),
+                    child: TextField(
+                      controller: questionController,
+                      style: GoogleFonts.getFont(
+                        fontFamily,
+                        fontSize: fontSize,
+                        color: textColor,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter your question here',
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(padding),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ),
+                  SizedBox(height: spacing * 2),
+                  
+                  // Options section
+                  Text(
+                    'Answer Options',
+                    style: GoogleFonts.getFont(
+                      fontFamily,
+                      fontSize: fontSize + 1,
+                      fontWeight: FontWeight.w600,
+                      color: questionColor,
+                    ),
+                  ),
+                  SizedBox(height: spacing),
+                  
+                  // Options list
+                  ...optionControllers.asMap().entries.map((entry) {
+                    int index = entry.key;
+                    TextEditingController controller = entry.value;
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: spacing),
+                      child: Row(
+                        children: [
+                          // Checkbox preview
+                          Container(
+                            width: checkboxSize,
+                            height: checkboxSize,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: textColor, width: 1.5),
+                              borderRadius: BorderRadius.circular(3),
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(width: spacing),
+                          
+                          // Option text field
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(borderRadius * 0.7),
+                                border: Border.all(color: borderColor, width: borderWidth),
+                              ),
+                              child: TextField(
+                                controller: controller,
+                                style: GoogleFonts.getFont(
+                                  fontFamily,
+                                  fontSize: fontSize,
+                                  color: textColor,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Option ${index + 1}',
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: padding,
+                                    vertical: padding * 0.7,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          
+                          // Delete button (if more than 2 options)
+                          if (optionControllers.length > 2)
+                            Padding(
+                              padding: EdgeInsets.only(left: spacing),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    optionControllers.removeAt(index);
+                                    options.removeAt(index);
+                                  });
+                                },
+                                child: Container(
+                                  padding: EdgeInsets.all(spacing * 0.5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    size: checkboxSize * 0.9,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  
+                  // Add Choice button
+                  if (optionControllers.length < 6)
+                    Padding(
+                      padding: EdgeInsets.only(top: spacing),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            optionControllers.add(TextEditingController(text: 'Option ${optionControllers.length + 1}'));
+                            options.add('Option ${options.length + 1}');
+                          });
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: padding,
+                            vertical: spacing,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: questionColor.withOpacity(0.5),
+                              width: borderWidth,
+                            ),
+                            borderRadius: BorderRadius.circular(borderRadius * 0.7),
+                            color: questionColor.withOpacity(0.1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add,
+                                size: checkboxSize * 0.8,
+                                color: questionColor,
+                              ),
+                              SizedBox(width: spacing * 0.7),
+                              Text(
+                                'Add Choice',
+                                style: GoogleFonts.getFont(
+                                  fontFamily,
+                                  fontSize: fontSize * 0.9,
+                                  color: questionColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            // Cancel button - gray style
+            Container(
+              margin: EdgeInsets.only(right: spacing),
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.grey.shade200,
+                  foregroundColor: Colors.grey.shade700,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: padding * 1.5,
+                    vertical: spacing,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(borderRadius * 0.7),
+                    side: BorderSide(color: Colors.grey.shade300, width: borderWidth),
+                  ),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.getFont(
+                    fontFamily,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+            
+            // Update button - gray style
+            Container(
+              child: ElevatedButton(
+                onPressed: () {
+                  // Collect all option values from controllers
+                  final updatedOptions = optionControllers
+                      .map((controller) => controller.text.trim())
+                      .where((text) => text.isNotEmpty)
+                      .toList();
+                  
+                  onUpdate({
+                    ...properties,
+                    'question': questionController.text.trim(),
+                    'options': updatedOptions.isNotEmpty ? updatedOptions : ['Option 1'],
+                  });
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade600,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: padding * 1.5,
+                    vertical: spacing,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(borderRadius * 0.7),
+                  ),
+                  elevation: 2,
+                ),
+                child: Text(
+                  'Update',
+                  style: GoogleFonts.getFont(
+                    fontFamily,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': 'multipleChoice',
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
+      'properties': properties,
+    };
+  }
+
+  factory MultipleChoiceComponent.fromJson(Map<String, dynamic> json) {
+    return MultipleChoiceComponent(
       id: json['id'],
       x: json['x']?.toDouble() ?? 0,
       y: json['y']?.toDouble() ?? 0,

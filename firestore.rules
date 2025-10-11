@@ -12,6 +12,11 @@ service cloud.firestore {
       allow create, update, delete: if true; // DEV ONLY
     }
 
+    match /custom_templates/{doc} {
+      allow read: if true;         // everyone can view templates
+      allow create, update, delete: if true; // DEV ONLY
+    }
+
     // Lock everything else
     match /{document=**} {
       allow read, write: if false;
