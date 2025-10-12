@@ -179,9 +179,9 @@ class _SimpleCleanupNotificationState extends State<SimpleCleanupNotification> {
     final subtitleColor = _isCompleted ? Colors.green.shade600 : (isAdmin ? Colors.orange.shade600 : Colors.blue.shade600);
     
     return Align(
-      alignment: Alignment.bottomCenter,
+      alignment: Alignment.bottomRight,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 20),
+        padding: const EdgeInsets.only(bottom: 20, right: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

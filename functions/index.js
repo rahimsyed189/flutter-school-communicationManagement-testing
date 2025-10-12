@@ -390,85 +390,95 @@ async function cleanupR2Storage(cutoffDate, r2Config) {
   let deletedCount = 0;
   let continuationToken = null;
 
-  console.log('Starting COMPLETE R2 cleanup - deleting ALL files, folders, images, videos, thumbnails');
+  console.log('Starting R2 cleanup - deleting files from specific folders (excluding currentPageBackgroundImage)');
+  
+  // Define folders to clean (exclude currentPageBackgroundImage)
+  const foldersToClean = ['images/', 'videos/', 'thumbnails/', 'pdfs/', 'documents/'];
+  console.log('Folders to clean:', foldersToClean);
 
   try {
-    do {
-      const params = {
-        Bucket: BUCKET_NAME,
-        MaxKeys: 1000
-      };
-
-      if (continuationToken) {
-        params.ContinuationToken = continuationToken;
-      }
-
-      console.log('Listing objects with params:', JSON.stringify(params, null, 2));
+    // Clean each folder separately
+    for (const folder of foldersToClean) {
+      console.log(`\n=== Cleaning folder: ${folder} ===`);
+      continuationToken = null;
       
-      try {
-        const response = await s3.listObjectsV2(params).promise();
-        console.log('List response:', {
-          KeyCount: response.KeyCount,
-          IsTruncated: response.IsTruncated,
-          NextContinuationToken: response.NextContinuationToken
-        });
-        
-        if (response.Contents && response.Contents.length > 0) {
-          // Delete ALL objects - no date filtering
-          const allObjects = response.Contents.map(obj => ({ Key: obj.Key }));
-          
-          console.log(`Found ${allObjects.length} objects to delete in this batch:`);
-          allObjects.forEach((obj, index) => {
-            console.log(`  ${index + 1}. ${obj.Key}`);
-          });
+      do {
+        const params = {
+          Bucket: BUCKET_NAME,
+          Prefix: folder,  // Only list objects in this folder
+          MaxKeys: 1000
+        };
 
-          if (allObjects.length > 0) {
-            // S3 allows up to 1000 objects per delete request
-            const chunks = [];
-            for (let i = 0; i < allObjects.length; i += 1000) {
-              chunks.push(allObjects.slice(i, i + 1000));
-            }
-
-            for (const chunk of chunks) {
-              const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Delete: {
-                  Objects: chunk,
-                  Quiet: false
-                }
-              };
-
-              console.log(`Attempting to delete ${chunk.length} objects...`);
-              const result = await s3.deleteObjects(deleteParams).promise();
-              deletedCount += result.Deleted ? result.Deleted.length : 0;
-              
-              console.log(`Successfully deleted ${result.Deleted ? result.Deleted.length : 0} objects in this chunk:`);
-              if (result.Deleted) {
-                result.Deleted.forEach((deleted, index) => {
-                  console.log(`  ✓ Deleted: ${deleted.Key}`);
-                });
-              }
-
-              if (result.Errors && result.Errors.length > 0) {
-                console.error('R2 delete errors:');
-                result.Errors.forEach((error, index) => {
-                  console.error(`  ❌ Error deleting ${error.Key}: ${error.Code} - ${error.Message}`);
-                });
-              }
-            }
-          }
-        } else {
-          console.log('No objects found in this batch');
+        if (continuationToken) {
+          params.ContinuationToken = continuationToken;
         }
 
-        continuationToken = response.NextContinuationToken;
-      } catch (listError) {
-        console.error('Error listing R2 objects:', listError);
-        throw listError;
-      }
-    } while (continuationToken);
+        console.log(`Listing objects in ${folder} with params:`, JSON.stringify(params, null, 2));
+        
+        try {
+          const response = await s3.listObjectsV2(params).promise();
+          console.log(`List response for ${folder}:`, {
+            KeyCount: response.KeyCount,
+            IsTruncated: response.IsTruncated,
+            NextContinuationToken: response.NextContinuationToken
+          });
+          
+          if (response.Contents && response.Contents.length > 0) {
+            const allObjects = response.Contents.map(obj => ({ Key: obj.Key }));
+            
+            console.log(`Found ${allObjects.length} objects to delete in ${folder}:`);
+            allObjects.slice(0, 5).forEach((obj, index) => {
+              console.log(`  ${index + 1}. ${obj.Key}`);
+            });
+            if (allObjects.length > 5) {
+              console.log(`  ... and ${allObjects.length - 5} more`);
+            }
 
-    console.log(`COMPLETE R2 cleanup finished - deleted ${deletedCount} total files`);
+            if (allObjects.length > 0) {
+              // S3 allows up to 1000 objects per delete request
+              const chunks = [];
+              for (let i = 0; i < allObjects.length; i += 1000) {
+                chunks.push(allObjects.slice(i, i + 1000));
+              }
+
+              for (const chunk of chunks) {
+                const deleteParams = {
+                  Bucket: BUCKET_NAME,
+                  Delete: {
+                    Objects: chunk,
+                    Quiet: false
+                  }
+                };
+
+                console.log(`Attempting to delete ${chunk.length} objects from ${folder}...`);
+                const result = await s3.deleteObjects(deleteParams).promise();
+                deletedCount += result.Deleted ? result.Deleted.length : 0;
+                
+                console.log(`Successfully deleted ${result.Deleted ? result.Deleted.length : 0} objects from ${folder}`);
+
+                if (result.Errors && result.Errors.length > 0) {
+                  console.error(`R2 delete errors in ${folder}:`);
+                  result.Errors.forEach((error, index) => {
+                    console.error(`  ❌ Error deleting ${error.Key}: ${error.Code} - ${error.Message}`);
+                  });
+                }
+              }
+            }
+          } else {
+            console.log(`No objects found in ${folder}`);
+          }
+
+          continuationToken = response.NextContinuationToken;
+        } catch (listError) {
+          console.error(`Error listing R2 objects in ${folder}:`, listError);
+          throw listError;
+        }
+      } while (continuationToken);
+      
+      console.log(`=== Finished cleaning folder: ${folder} ===`);
+    }
+
+    console.log(`\nR2 cleanup completed - deleted ${deletedCount} total files (currentPageBackgroundImage folder excluded)`);
     console.log('=== R2 CLEANUP END ===');
     return deletedCount;
     

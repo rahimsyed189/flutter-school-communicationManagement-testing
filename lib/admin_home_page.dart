@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -16,6 +17,17 @@ import 'server_cleanup_page.dart';
 import 'school_notifications_template.dart';
 import 'admin_background_image_page.dart';
 
+// Global singleton to cache background image across page navigations
+class BackgroundImageCache {
+  static final BackgroundImageCache _instance = BackgroundImageCache._internal();
+  factory BackgroundImageCache() => _instance;
+  BackgroundImageCache._internal();
+
+  String? cachedImagePath;
+  ImageProvider? cachedImageProvider;
+  bool isLoaded = false;
+}
+
 class AdminHomePage extends StatefulWidget {
   final String currentUserId;
   final String currentUserRole; // 'admin' or 'user'
@@ -26,6 +38,7 @@ class AdminHomePage extends StatefulWidget {
 }
 
 class _AdminHomePageState extends State<AdminHomePage> {
+  final _bgCache = BackgroundImageCache();
   String? _backgroundImageUrl;
   static String r2AccountId = '';
   static String r2AccessKeyId = '';
@@ -34,16 +47,69 @@ class _AdminHomePageState extends State<AdminHomePage> {
   static String r2CustomDomain = '';
   static bool _r2ConfigLoaded = false;
   ImageProvider? _cachedImageProvider; // Cache the image provider
+  bool _isLoadingBackground = true; // Track loading state
+  bool _showContent = false; // Control content visibility
+  
+  // Gradient colors for fallback background
+  Color _gradientColor1 = Colors.white;
+  Color _gradientColor2 = Colors.white;
 
   @override
   void initState() {
     super.initState();
-    _loadBackgroundImage();
+    
+    _loadGradientColors(); // Load custom gradient colors
+    
+    // Check if image is already loaded in memory (from previous navigation)
+    if (_bgCache.isLoaded && _bgCache.cachedImagePath != null) {
+      // Image already in memory - use it immediately, no loading needed
+      setState(() {
+        _backgroundImageUrl = _bgCache.cachedImagePath;
+        _cachedImageProvider = _bgCache.cachedImageProvider;
+        _isLoadingBackground = false;
+        _showContent = true;
+      });
+      debugPrint('✅ Background image loaded from memory cache (instant, no disk read)');
+      return;
+    }
+    
+    // Otherwise, load from disk/R2
+    _checkAndLoadBackgroundImage();
+    
+    // Force show content after 4 seconds regardless of background load status
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _showContent = true;
+          _isLoadingBackground = false;
+        });
+      }
+    });
+  }
+  
+  Future<void> _loadGradientColors() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_gradient')
+          .get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        if (mounted) {
+          setState(() {
+            _gradientColor1 = Color(data['color1'] ?? 0xFFFFFFFF);
+            _gradientColor2 = Color(data['color2'] ?? 0xFFFFFFFF);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load gradient colors: $e');
+    }
   }
 
-  Future<void> _loadBackgroundImage() async {
+  Future<void> _checkAndLoadBackgroundImage() async {
     try {
-      // First, check if we have a locally cached image
+      // First, check if we have a locally cached image (synchronous check)
       final appDir = await getApplicationDocumentsDirectory();
       final localImagePath = '${appDir.path}/background_image.jpg';
       final localImageFile = File(localImagePath);
@@ -53,15 +119,37 @@ class _AdminHomePageState extends State<AdminHomePage> {
         _cachedImageProvider = FileImage(localImageFile);
         await precacheImage(_cachedImageProvider!, context);
         
-        // Use local cached image
+        // Save to memory cache for future navigations
+        _bgCache.cachedImagePath = localImageFile.path;
+        _bgCache.cachedImageProvider = _cachedImageProvider;
+        _bgCache.isLoaded = true;
+        
+        // Use local cached image - no loading needed
         if (mounted) {
           setState(() {
             _backgroundImageUrl = localImageFile.path;
+            _isLoadingBackground = false; // No loading since we have cache
+            _showContent = true;
           });
         }
-        debugPrint('✅ Background image loaded from local cache: $localImagePath');
-        return; // Return early - no need to fetch from R2 if we have it cached
+        debugPrint('✅ Background image loaded from disk cache and saved to memory: $localImagePath');
+        return; // Return early - image is cached, no need to download
       }
+
+      // If no cache, then proceed to download from R2
+      await _loadBackgroundImage();
+    } catch (e) {
+      debugPrint('❌ Error checking cached background: $e');
+      // If cache check fails, try downloading
+      await _loadBackgroundImage();
+    }
+  }
+
+  Future<void> _loadBackgroundImage() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final localImagePath = '${appDir.path}/background_image.jpg';
+      final localImageFile = File(localImagePath);
 
       // Load R2 configuration from Firestore
       if (!_r2ConfigLoaded) {
@@ -137,12 +225,21 @@ class _AdminHomePageState extends State<AdminHomePage> {
             await localImageFile.writeAsBytes(response.bodyBytes);
             debugPrint('💾 Background image saved to local storage: $localImagePath');
             
+            // Precache and save to memory cache
+            _cachedImageProvider = FileImage(localImageFile);
+            await precacheImage(_cachedImageProvider!, context);
+            _bgCache.cachedImagePath = localImageFile.path;
+            _bgCache.cachedImageProvider = _cachedImageProvider;
+            _bgCache.isLoaded = true;
+            
             if (mounted) {
               setState(() {
                 _backgroundImageUrl = localImageFile.path;
+                _isLoadingBackground = false;
+                _showContent = true;
               });
             }
-            debugPrint('✅ Background image loaded and cached from R2');
+            debugPrint('✅ Background image loaded from R2 and saved to memory cache');
           } else {
             debugPrint('❌ Failed to download image: ${response.statusCode}');
           }
@@ -245,25 +342,25 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       fit: BoxFit.cover,
                       memCacheWidth: 1080, // Reduce memory usage
                       placeholder: (context, url) => Container(
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Color(0xFF667eea),
-                              Color(0xFF764ba2),
+                              _gradientColor1,
+                              _gradientColor2,
                             ],
                           ),
                         ),
                       ),
                       errorWidget: (context, url, error) => Container(
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Color(0xFF667eea),
-                              Color(0xFF764ba2),
+                              _gradientColor1,
+                              _gradientColor2,
                             ],
                           ),
                         ),
@@ -275,13 +372,13 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       filterQuality: FilterQuality.low, // Faster rendering
                       gaplessPlayback: true, // Smooth transitions
                       errorBuilder: (context, error, stackTrace) => Container(
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              Color(0xFF667eea),
-                              Color(0xFF764ba2),
+                              _gradientColor1,
+                              _gradientColor2,
                             ],
                           ),
                         ),
@@ -292,13 +389,13 @@ class _AdminHomePageState extends State<AdminHomePage> {
           if (_backgroundImageUrl == null)
             Positioned.fill(
               child: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF667eea),
-                      Color(0xFF764ba2),
+                      _gradientColor1,
+                      _gradientColor2,
                     ],
                   ),
                 ),
@@ -321,13 +418,13 @@ class _AdminHomePageState extends State<AdminHomePage> {
               ),
             ),
           ),
-          // Content
+          // Content (always show but will be blurred when loading)
           Column(
             children: [
               // Custom Header
               Container(
-                height: 160,
-                child: SafeArea(
+                  height: 160,
+                  child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Column(
@@ -901,15 +998,52 @@ class _AdminHomePageState extends State<AdminHomePage> {
           // Add cleanup reminder shortcut with existing workflow
           SimpleCleanupNotification(
             currentUserId: widget.currentUserId,
-            currentUserRole: widget.currentUserRole,
-            onFullCleanup: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => AdminCleanupPage(currentUserId: widget.currentUserId),
+              currentUserRole: widget.currentUserRole,
+              onFullCleanup: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => AdminCleanupPage(currentUserId: widget.currentUserId),
+                  ),
+                );
+              },
+            ),
+          // Loading overlay with blur effect
+          if (_isLoadingBackground)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  color: Colors.transparent,
+                  alignment: Alignment.center,
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 50,
+                        height: 50,
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          strokeWidth: 3,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Loading...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
         ],
       ),
     ],

@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:minio/minio.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class AdminBackgroundImagePage extends StatefulWidget {
   const AdminBackgroundImagePage({super.key});
@@ -28,12 +29,61 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   double? _progress;
   String? _status;
   String? _currentBackgroundUrl;
+  
+  // Gradient colors for fallback background
+  Color _gradientColor1 = Colors.white;
+  Color _gradientColor2 = Colors.white;
 
   @override
   void initState() {
     super.initState();
     _loadR2Configuration();
     _loadCurrentBackground();
+    _loadGradientColors();
+  }
+  
+  Future<void> _loadGradientColors() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_gradient')
+          .get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _gradientColor1 = Color(data['color1'] ?? 0xFFFFFFFF);
+          _gradientColor2 = Color(data['color2'] ?? 0xFFFFFFFF);
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load gradient colors: $e');
+    }
+  }
+  
+  Future<void> _saveGradientColors() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_gradient')
+          .set({
+        'color1': _gradientColor1.value,
+        'color2': _gradientColor2.value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✓ Gradient colors saved')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save gradient colors: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _loadR2Configuration() async {
@@ -468,9 +518,180 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
                 ),
               ),
             ),
+            const SizedBox(height: 24),
+
+            // Gradient Background Colors
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Fallback Gradient Colors',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'These colors show while background image is loading',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Gradient Preview
+                    Container(
+                      height: 120,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [_gradientColor1, _gradientColor2],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Gradient Preview',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                offset: Offset(1, 1),
+                                blurRadius: 3,
+                                color: Colors.black45,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Color 1 Picker
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Color 1 (Top-Left)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _showColorPicker(true),
+                          child: Container(
+                            width: 60,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _gradientColor1,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey[400]!, width: 2),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Color 2 Picker
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Color 2 (Bottom-Right)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _showColorPicker(false),
+                          child: Container(
+                            width: 60,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _gradientColor2,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey[400]!, width: 2),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Save Gradient Button
+                    ElevatedButton.icon(
+                      onPressed: _saveGradientColors,
+                      icon: const Icon(Icons.save),
+                      label: const Text('Save Gradient Colors'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+  
+  void _showColorPicker(bool isFirstColor) {
+    Color pickerColor = isFirstColor ? _gradientColor1 : _gradientColor2;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(isFirstColor ? 'Pick Color 1' : 'Pick Color 2'),
+          content: SingleChildScrollView(
+            child: ColorPicker(
+              pickerColor: pickerColor,
+              onColorChanged: (Color color) {
+                pickerColor = color;
+              },
+              pickerAreaHeightPercent: 0.8,
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: const Text('Select'),
+              onPressed: () {
+                setState(() {
+                  if (isFirstColor) {
+                    _gradientColor1 = pickerColor;
+                  } else {
+                    _gradientColor2 = pickerColor;
+                  }
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

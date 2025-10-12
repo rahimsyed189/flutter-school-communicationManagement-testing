@@ -374,25 +374,30 @@ class _AdminCleanupPageState extends State<AdminCleanupPage> {
         int deletedCount = 0;
         
         try {
-          print("Listing ALL objects in bucket $bucketName for deletion...");
+          print("Listing objects in bucket $bucketName for deletion (excluding currentPageBackgroundImage folder)...");
           
-          // List ALL objects in the bucket using the correct API
-          final listStream = minio.listObjects(bucketName, recursive: true);
+          // Define folders to clean (exclude currentPageBackgroundImage)
+          final foldersToClean = ['images/', 'videos/', 'thumbnails/', 'pdfs/', 'documents/'];
           List<String> allObjectKeys = [];
           
-          // Collect all object keys from the stream
-          await for (final listResult in listStream) {
-            for (final obj in listResult.objects) {
-              if (obj.key != null && obj.key!.isNotEmpty) {
-                allObjectKeys.add(obj.key!);
+          // List objects from specific folders only
+          for (final folder in foldersToClean) {
+            print("Scanning folder: $folder");
+            final listStream = minio.listObjects(bucketName, prefix: folder, recursive: true);
+            
+            await for (final listResult in listStream) {
+              for (final obj in listResult.objects) {
+                if (obj.key != null && obj.key!.isNotEmpty) {
+                  allObjectKeys.add(obj.key!);
+                }
               }
             }
           }
           
-          print("Found ${allObjectKeys.length} total objects to delete");
+          print("Found ${allObjectKeys.length} total objects to delete (currentPageBackgroundImage folder excluded)");
           
           if (allObjectKeys.isEmpty) {
-            print("No objects found in bucket");
+            print("No objects found in specified folders");
             return 0;
           }
           
