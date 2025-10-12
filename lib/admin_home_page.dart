@@ -47,8 +47,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
   static String r2CustomDomain = '';
   static bool _r2ConfigLoaded = false;
   ImageProvider? _cachedImageProvider; // Cache the image provider
-  bool _isLoadingBackground = true; // Track loading state
-  bool _showContent = false; // Control content visibility
+  bool _isLoadingBackground = false; // Start as false - only show loading if needed
+  bool _showContent = true; // Start as true - content visible by default
   
   // Gradient colors for fallback background
   Color _gradientColor1 = Colors.white;
@@ -75,16 +75,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
     
     // Otherwise, load from disk/R2
     _checkAndLoadBackgroundImage();
-    
-    // Force show content after 4 seconds regardless of background load status
-    Future.delayed(const Duration(seconds: 4), () {
-      if (mounted) {
-        setState(() {
-          _showContent = true;
-          _isLoadingBackground = false;
-        });
-      }
-    });
   }
   
   Future<void> _loadGradientColors() async {
@@ -128,7 +118,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         if (mounted) {
           setState(() {
             _backgroundImageUrl = localImageFile.path;
-            _isLoadingBackground = false; // No loading since we have cache
+            _isLoadingBackground = false;
             _showContent = true;
           });
         }
@@ -136,7 +126,24 @@ class _AdminHomePageState extends State<AdminHomePage> {
         return; // Return early - image is cached, no need to download
       }
 
-      // If no cache, then proceed to download from R2
+      // If no cache exists, show loading WITH CONTENT (so background shows while loading)
+      if (mounted) {
+        setState(() {
+          _isLoadingBackground = true;
+          _showContent = true; // Keep content visible so background gradient shows
+        });
+      }
+      
+      // Set timeout for loading
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted && _isLoadingBackground) {
+          setState(() {
+            _showContent = true;
+            _isLoadingBackground = false;
+          });
+        }
+      });
+      
       await _loadBackgroundImage();
     } catch (e) {
       debugPrint('❌ Error checking cached background: $e');
@@ -796,8 +803,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   .limit(1)
                   .snapshots(),
               builder: (context, snap) {
+                // Always render content regardless of connection state
                 String subtitle = 'Open announcements chat';
                 String trailing = '';
+                
+                // Only update subtitle if we have data
                 if (snap.hasData && snap.data!.docs.isNotEmpty) {
                   final data = snap.data!.docs.first.data();
                   final msg = (data['message'] ?? data['text'] ?? '').toString();
@@ -807,9 +817,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 }
 
                 return ListView(
+                  key: const ValueKey('main_list_view'), // Add key to prevent rebuild issues
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   children: [
               GridView(
+                key: const ValueKey('main_grid_view'), // Add key to ensure grid identity
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

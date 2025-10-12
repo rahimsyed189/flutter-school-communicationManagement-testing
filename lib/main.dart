@@ -9,8 +9,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:minio/minio.dart';
-import 'package:http/http.dart' as http;
 
 import 'firebase_options.dart';
 import 'announcements_page.dart';
@@ -39,111 +37,6 @@ import 'services/route_persistence_service.dart';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-}
-
-/// Preload background image before showing AdminHomePage
-/// This runs during the initial auth check, providing a unified loading experience
-Future<void> preloadBackgroundImage() async {
-  try {
-    // Check if we have a locally cached image
-    final appDir = await getApplicationDocumentsDirectory();
-    final localImagePath = '${appDir.path}/background_image.jpg';
-    final localImageFile = File(localImagePath);
-
-    if (localImageFile.existsSync()) {
-      debugPrint('✅ Background image already cached locally: $localImagePath');
-      return; // Already cached, no need to fetch from R2
-    }
-
-    // Load R2 configuration from Firestore
-    final doc = await FirebaseFirestore.instance
-        .collection('app_config')
-        .doc('r2_settings')
-        .get();
-    
-    if (!doc.exists) {
-      debugPrint('⚠️ R2 settings not found in Firestore');
-      return;
-    }
-
-    final data = doc.data()!;
-    final r2AccountId = data['accountId'] ?? '';
-    final r2AccessKeyId = data['accessKeyId'] ?? '';
-    final r2SecretAccessKey = data['secretAccessKey'] ?? '';
-    final r2BucketName = data['bucketName'] ?? '';
-    final r2CustomDomain = data['customDomain'] ?? '';
-
-    // Check if R2 is configured
-    if (r2AccountId.isEmpty || r2AccessKeyId.isEmpty || r2SecretAccessKey.isEmpty || r2BucketName.isEmpty) {
-      debugPrint('⚠️ R2 not configured, skipping background image preload');
-      return;
-    }
-
-    // Connect to R2 and list objects in currentPageBackgroundImage folder
-    final minio = Minio(
-      endPoint: '$r2AccountId.r2.cloudflarestorage.com',
-      accessKey: r2AccessKeyId,
-      secretKey: r2SecretAccessKey,
-      useSSL: true,
-    );
-
-    // List objects in the currentPageBackgroundImage folder
-    final stream = minio.listObjects(
-      r2BucketName,
-      prefix: 'currentPageBackgroundImage/',
-      recursive: true,
-    );
-
-    // Get the first image (most recent upload)
-    String? firstImageKey;
-    await for (final listResult in stream) {
-      for (final obj in listResult.objects) {
-        if (obj.key != null && obj.key!.contains('.')) {
-          // Check if it's an image file
-          final ext = obj.key!.split('.').last.toLowerCase();
-          if (['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext)) {
-            firstImageKey = obj.key;
-            break;
-          }
-        }
-      }
-      if (firstImageKey != null) break;
-    }
-
-    if (firstImageKey == null) {
-      debugPrint('⚠️ No background image found in R2');
-      return;
-    }
-
-    // Get presigned URL from R2
-    String imageUrl;
-    if (r2CustomDomain.isNotEmpty) {
-      imageUrl = '$r2CustomDomain/$firstImageKey';
-    } else {
-      imageUrl = await minio.presignedGetObject(r2BucketName, firstImageKey, expires: 3600);
-    }
-    
-    debugPrint('📥 Preloading background image from R2: $imageUrl');
-
-    // Download the image and save locally with timeout
-    final response = await http.get(Uri.parse(imageUrl)).timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        debugPrint('⏱️ Background image download timed out');
-        throw TimeoutException('Download timeout');
-      },
-    );
-    
-    if (response.statusCode == 200) {
-      await localImageFile.writeAsBytes(response.bodyBytes);
-      debugPrint('💾 Background image preloaded and cached: $localImagePath');
-    } else {
-      debugPrint('❌ Failed to download background image: ${response.statusCode}');
-    }
-  } catch (e) {
-    debugPrint('⚠️ Error preloading background image: $e');
-    // Don't throw - just log the error and continue
-  }
 }
 
 @pragma('vm:entry-point')
@@ -346,20 +239,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  // Check for pending R2 cleanup
-  try {
-    final pendingCleanupDoc = await FirebaseFirestore.instance.collection('app_config').doc('pending_r2_cleanup').get();
-    if (pendingCleanupDoc.exists) {
-      final data = pendingCleanupDoc.data();
-      if (data != null && data['enabled'] == true) {
-        print("Found pending R2 cleanup - will process on app startup");
-        // We'll handle this in the admin cleanup page
-      }
-    }
-  } catch (e) {
-    print("Error checking for pending R2 cleanup: $e");
-  }
-  
   // Optional: configure background downloader (no notifications here)
   try {
     await FileDownloader().configure();
@@ -509,18 +388,46 @@ class _SessionGate extends StatefulWidget {
 }
 
 class _SessionGateState extends State<_SessionGate> {
+  bool _isLoading = true;
+  String? _backgroundImagePath;
+  
   @override
   void initState() {
     super.initState();
-    _decide();
+    _loadBackgroundAndDecide();
   }
 
-  Future<void> _decide() async {
+  Future<void> _loadBackgroundAndDecide() async {
+    // Load background image first
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final localImagePath = '${appDir.path}/background_image.jpg';
+      final localImageFile = File(localImagePath);
+      
+      if (localImageFile.existsSync()) {
+        setState(() {
+          _backgroundImagePath = localImageFile.path;
+        });
+        debugPrint('✅ Background image loaded in SessionGate');
+      }
+    } catch (e) {
+      debugPrint('Failed to load background in SessionGate: $e');
+    }
+    
+    // Then check login state
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('session_userId');
     final role = prefs.getString('session_role');
-  // If session_* keys exist, keep user signed in across restarts until they explicitly sign out
+    final hasLaunchedBefore = prefs.getBool('has_launched_before') ?? false;
+    
+    // Mark that app has been launched
+    if (!hasLaunchedBefore) {
+      await prefs.setBool('has_launched_before', true);
+    }
+    
+    // If session_* keys exist, keep user signed in across restarts until they explicitly sign out
     if (!mounted) return;
+    
     if (userId != null && userId.isNotEmpty) {
       // Ensure NotificationService knows the user and re-enables subscriptions if consented
       try {
@@ -528,16 +435,42 @@ class _SessionGateState extends State<_SessionGate> {
         // Always attempt to enable and save token on session restore so per-user token delivery works.
         await NotificationService.instance.enableForUser(userId);
       } catch (_) {}
-  // All users land on Current Page (admin and non-admin). Admin-only actions are hidden for non-admins.
-  Navigator.pushReplacementNamed(context, '/admin', arguments: {'userId': userId, 'role': role ?? 'user'});
+      
+      // All users land on Current Page (admin and non-admin). Admin-only actions are hidden for non-admins.
+      Navigator.pushReplacementNamed(context, '/admin', arguments: {'userId': userId, 'role': role ?? 'user'});
     } else {
-  Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthChoicePage()));
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthChoicePage()));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return Scaffold(
+      body: Container(
+        decoration: _backgroundImagePath != null
+            ? BoxDecoration(
+                image: DecorationImage(
+                  image: FileImage(File(_backgroundImagePath!)),
+                  fit: BoxFit.cover,
+                ),
+              )
+            : const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF667eea),
+                    Color(0xFF764ba2),
+                  ],
+                ),
+              ),
+        child: const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        ),
+      ),
+    );
   }
 }
 
