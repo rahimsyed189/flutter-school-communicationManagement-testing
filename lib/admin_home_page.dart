@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:minio/minio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'notification_service.dart';
 import 'youtube_uploader_page.dart';
 import 'video_upload_settings_page.dart';
@@ -9,6 +14,7 @@ import 'simple_cleanup_notification.dart';
 import 'admin_cleanup_page.dart';
 import 'server_cleanup_page.dart';
 import 'school_notifications_template.dart';
+import 'admin_background_image_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   final String currentUserId;
@@ -20,6 +26,137 @@ class AdminHomePage extends StatefulWidget {
 }
 
 class _AdminHomePageState extends State<AdminHomePage> {
+  String? _backgroundImageUrl;
+  static String r2AccountId = '';
+  static String r2AccessKeyId = '';
+  static String r2SecretAccessKey = '';
+  static String r2BucketName = '';
+  static String r2CustomDomain = '';
+  static bool _r2ConfigLoaded = false;
+  ImageProvider? _cachedImageProvider; // Cache the image provider
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackgroundImage();
+  }
+
+  Future<void> _loadBackgroundImage() async {
+    try {
+      // First, check if we have a locally cached image
+      final appDir = await getApplicationDocumentsDirectory();
+      final localImagePath = '${appDir.path}/background_image.jpg';
+      final localImageFile = File(localImagePath);
+
+      if (localImageFile.existsSync()) {
+        // Precache the image for instant display
+        _cachedImageProvider = FileImage(localImageFile);
+        await precacheImage(_cachedImageProvider!, context);
+        
+        // Use local cached image
+        if (mounted) {
+          setState(() {
+            _backgroundImageUrl = localImageFile.path;
+          });
+        }
+        debugPrint('✅ Background image loaded from local cache: $localImagePath');
+        return; // Return early - no need to fetch from R2 if we have it cached
+      }
+
+      // Load R2 configuration from Firestore
+      if (!_r2ConfigLoaded) {
+        final doc = await FirebaseFirestore.instance
+            .collection('app_config')
+            .doc('r2_settings')
+            .get();
+        if (doc.exists) {
+          final data = doc.data()!;
+          r2AccountId = data['accountId'] ?? '';
+          r2AccessKeyId = data['accessKeyId'] ?? '';
+          r2SecretAccessKey = data['secretAccessKey'] ?? '';
+          r2BucketName = data['bucketName'] ?? '';
+          r2CustomDomain = data['customDomain'] ?? '';
+          _r2ConfigLoaded = true;
+        }
+      }
+
+      // Check if R2 is configured
+      if (r2AccountId.isEmpty || r2AccessKeyId.isEmpty || r2SecretAccessKey.isEmpty || r2BucketName.isEmpty) {
+        debugPrint('R2 not configured, skipping background image load');
+        return;
+      }
+
+      // Connect to R2 and list objects in currentPageBackgroundImage folder
+      final minio = Minio(
+        endPoint: '$r2AccountId.r2.cloudflarestorage.com',
+        accessKey: r2AccessKeyId,
+        secretKey: r2SecretAccessKey,
+        useSSL: true,
+      );
+
+      // List objects in the currentPageBackgroundImage folder
+      final stream = minio.listObjects(
+        r2BucketName,
+        prefix: 'currentPageBackgroundImage/',
+        recursive: true,
+      );
+
+      // Get the first image (most recent upload is typically first)
+      String? firstImageKey;
+      await for (final listResult in stream) {
+        for (final obj in listResult.objects) {
+          if (obj.key != null && obj.key!.contains('.')) {
+            // Check if it's an image file
+            final ext = obj.key!.split('.').last.toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext)) {
+              firstImageKey = obj.key;
+              break; // Get first image and stop
+            }
+          }
+        }
+        if (firstImageKey != null) break; // Exit outer loop if found
+      }
+
+      if (firstImageKey != null) {
+        // Get presigned URL from R2 (valid for 1 hour)
+        String imageUrl;
+        try {
+          if (r2CustomDomain.isNotEmpty) {
+            // If custom domain is configured, use it directly
+            imageUrl = '$r2CustomDomain/$firstImageKey';
+          } else {
+            // Otherwise, get a presigned URL from R2
+            imageUrl = await minio.presignedGetObject(r2BucketName, firstImageKey, expires: 3600);
+          }
+          
+          debugPrint('📥 Downloading background image from R2: $imageUrl');
+
+          // Download the image and save locally
+          final response = await http.get(Uri.parse(imageUrl));
+          if (response.statusCode == 200) {
+            await localImageFile.writeAsBytes(response.bodyBytes);
+            debugPrint('💾 Background image saved to local storage: $localImagePath');
+            
+            if (mounted) {
+              setState(() {
+                _backgroundImageUrl = localImageFile.path;
+              });
+            }
+            debugPrint('✅ Background image loaded and cached from R2');
+          } else {
+            debugPrint('❌ Failed to download image: ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('❌ Error downloading background image: $e');
+        }
+      } else {
+        debugPrint('ℹ️ No background image found in R2 currentPageBackgroundImage folder');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to load background image from R2: $e');
+    }
+  }
+
   String _formatTime(DateTime d) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -97,50 +234,137 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text('Current Page'),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF667eea),
-                Color(0xFF764ba2),
-              ],
+      body: Stack(
+        children: [
+          // Full Page Background Image
+          if (_backgroundImageUrl != null)
+            Positioned.fill(
+              child: _backgroundImageUrl!.startsWith('http')
+                  ? CachedNetworkImage(
+                      imageUrl: _backgroundImageUrl!,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 1080, // Reduce memory usage
+                      placeholder: (context, url) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF667eea),
+                              Color(0xFF764ba2),
+                            ],
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF667eea),
+                              Color(0xFF764ba2),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  : Image(
+                      image: _cachedImageProvider ?? FileImage(File(_backgroundImageUrl!)),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.low, // Faster rendering
+                      gaplessPlayback: true, // Smooth transitions
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF667eea),
+                              Color(0xFF764ba2),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          // Gradient background if no image
+          if (_backgroundImageUrl == null)
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF667eea),
+                      Color(0xFF764ba2),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // Semi-transparent overlay for better content visibility
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.1),
+                    Colors.white.withOpacity(0.8),
+                  ],
+                  stops: const [0.0, 0.3, 0.7],
+                ),
+              ),
             ),
           ),
-        ),
-        actions: [
-          if (widget.currentUserRole == 'admin')
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  showDragHandle: true,
-                  builder: (ctx) => SafeArea(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      const ListTile(
-                        title: Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      const Divider(height: 0),
-                      ListTile(
-                        leading: const Icon(Icons.video_settings_outlined),
-                        title: const Text('Video Upload settings'),
-                        subtitle: const Text('Default compression quality'),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const VideoUploadSettingsPage()),
-                          );
-                        },
-                      ),
-                      const Divider(height: 0),
-                      ListTile(
+          // Content
+          Column(
+            children: [
+              // Custom Header
+              Container(
+                height: 160,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Top Row with back button and actions
+                        Row(
+                          children: [
+                            const Spacer(),
+                            if (widget.currentUserRole == 'admin')
+                              IconButton(
+                                icon: const Icon(Icons.settings, color: Colors.white),
+                                onPressed: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    showDragHandle: true,
+                                    builder: (ctx) => SafeArea(
+                                    child: ListView(
+                                      shrinkWrap: true,
+                                      children: [
+                                        const ListTile(
+                                          title: Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        ),
+                                        const Divider(height: 0),
+                                        ListTile(
+                                          leading: const Icon(Icons.video_settings_outlined),
+                                          title: const Text('Video Upload settings'),
+                                          subtitle: const Text('Default compression quality'),
+                                          onTap: () {
+                                            Navigator.pop(ctx);
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(builder: (_) => const VideoUploadSettingsPage()),
+                                            );
+                                          },
+                                        ),
+                                        const Divider(height: 0),
+                                        ListTile(
                         leading: const Icon(Icons.group_add),
                         title: const Text('Create Group'),
                         onTap: () {
@@ -311,6 +535,22 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               );
                             },
                           ),
+                          const Divider(height: 0),
+                          ListTile(
+                            leading: const Icon(Icons.wallpaper, color: Colors.purple),
+                            title: const Text('Background Image'),
+                            subtitle: const Text('Set Current Page background image'),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const AdminBackgroundImagePage()),
+                              ).then((_) {
+                                // Reload background after returning from the page
+                                _loadBackgroundImage();
+                              });
+                            },
+                          ),
+                          const Divider(height: 0),
                           ListTile(
                             leading: const Icon(Icons.photo_library, color: Colors.green),
                             title: const Text('Attach Media'),
@@ -383,62 +623,75 @@ class _AdminHomePageState extends State<AdminHomePage> {
               );
             },
           ),
-          if (widget.currentUserRole != 'admin')
-            IconButton(
-              icon: const Icon(Icons.more_vert),
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  showDragHandle: true,
-                  builder: (ctx) => SafeArea(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        const ListTile(
-                          title: Text('Menu', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        const Divider(height: 0),
-                        ListTile(
-                          leading: const Icon(Icons.logout, color: Colors.redAccent),
-                          title: const Text('Sign Out', style: TextStyle(color: Colors.redAccent)),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Sign out?'),
-                                content: const Text('You will stop receiving notifications until you log in again.'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancel')),
-                                  TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Sign Out')),
-                                ],
+                            if (widget.currentUserRole != 'admin')
+                              IconButton(
+                                icon: const Icon(Icons.more_vert, color: Colors.white),
+                                onPressed: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    showDragHandle: true,
+                                    builder: (ctx) => SafeArea(
+                                      child: ListView(
+                                        shrinkWrap: true,
+                                        children: [
+                                          const ListTile(
+                                            title: Text('Menu', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          ),
+                                          const Divider(height: 0),
+                                          ListTile(
+                                            leading: const Icon(Icons.logout, color: Colors.redAccent),
+                                            title: const Text('Sign Out', style: TextStyle(color: Colors.redAccent)),
+                                            onTap: () async {
+                                              Navigator.pop(ctx);
+                                              final ok = await showDialog<bool>(
+                                                context: context,
+                                                builder: (dctx) => AlertDialog(
+                                                  title: const Text('Sign out?'),
+                                                  content: const Text('You will stop receiving notifications until you log in again.'),
+                                                  actions: [
+                                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancel')),
+                                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Sign Out')),
+                                                  ],
+                                                ),
+                                              );
+                                              if (ok != true) return;
+                                              try {
+                                                await NotificationService.instance.disableForUser(widget.currentUserId);
+                                                await NotificationService.instance.unsubscribeFromUserGroups(widget.currentUserId);
+                                              } catch (_) {}
+                                              final prefs = await SharedPreferences.getInstance();
+                                              await prefs.remove('session_userId');
+                                              await prefs.remove('session_role');
+                                              await prefs.remove('session_name');
+                                              if (!mounted) return;
+                                              Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                            if (ok != true) return;
-                            try {
-                              await NotificationService.instance.disableForUser(widget.currentUserId);
-                              await NotificationService.instance.unsubscribeFromUserGroups(widget.currentUserId);
-                            } catch (_) {}
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.remove('session_userId');
-                            await prefs.remove('session_role');
-                            await prefs.remove('session_name');
-                            if (!mounted) return;
-                            Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-                          },
+                          ],
+                        ),
+                        const Spacer(),
+                        // Title
+                        const Text(
+                          'Current Page',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Main content area
-          Expanded(
+                ),
+              ),
+              // Main content area
+              Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
                   .collection('communications')
@@ -643,8 +896,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
             ],
           );
         },
-            ),
-          ),
+      ),
+    ),
           // Add cleanup reminder shortcut with existing workflow
           SimpleCleanupNotification(
             currentUserId: widget.currentUserId,
@@ -659,7 +912,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
           ),
         ],
       ),
-    );
+    ],
+  ),
+);
   }
 
   Widget _buildFeatureCard({

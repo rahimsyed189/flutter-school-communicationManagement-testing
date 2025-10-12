@@ -188,24 +188,27 @@ class _SimpleCleanupNotificationState extends State<SimpleCleanupNotification> {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(44),
+                borderRadius: BorderRadius.circular(28),
                 onTap: _isLoading ? null : _showCleanupSheet,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
-                  width: 84,
-                  height: 84,
+                  width: 56,
+                  height: 56,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
-                      colors: [backgroundColor1, backgroundColor2],
+                      colors: [
+                        backgroundColor1.withOpacity(0.5),
+                        backgroundColor2.withOpacity(0.5)
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: primaryColor.withOpacity(0.28),
-                        blurRadius: 18,
-                        offset: const Offset(0, 10),
+                        color: primaryColor.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
@@ -215,54 +218,42 @@ class _SimpleCleanupNotificationState extends State<SimpleCleanupNotification> {
                       Icon(
                         _isCompleted ? Icons.check_circle_outline : Icons.cleaning_services,
                         color: iconColor,
-                        size: 34,
+                        size: 24,
                       ),
                       if (_isLoading)
                         SizedBox(
-                          width: 52,
-                          height: 52,
+                          width: 36,
+                          height: 36,
                           child: CircularProgressIndicator(
-                            strokeWidth: 3,
+                            strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
                           ),
                         ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: GestureDetector(
+                          onTap: _dismissNotification,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _isCompleted ? 'Cleanup done' : (isAdmin ? 'Admin cleanup' : 'Quick cleanup'),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: textColor,
-              ),
-            ),
-            const SizedBox(height: 2),
-            if (_completionMessage.isNotEmpty)
-              Text(
-                _completionMessage,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: subtitleColor),
-              )
-            else
-              Text(
-                _isCompleted
-                    ? 'Cache already cleared for today.'
-                    : (isAdmin
-                        ? 'Tap for full admin cleanup tools.'
-                        : 'Tap to free up storage on this device.'),
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: subtitleColor),
-              ),
-            if (!_isCompleted)
-              TextButton(
-                onPressed: _isLoading ? null : _dismissNotification,
-                style: TextButton.styleFrom(foregroundColor: subtitleColor),
-                child: const Text('Dismiss for today', style: TextStyle(fontSize: 11)),
-              ),
           ],
         ),
       ),
