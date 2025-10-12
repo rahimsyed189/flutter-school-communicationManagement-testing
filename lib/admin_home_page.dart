@@ -97,17 +97,30 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: const Text('Current Page'),
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+              ],
+            ),
+          ),
+        ),
         actions: [
           if (widget.currentUserRole == 'admin')
             IconButton(
               icon: const Icon(Icons.settings),
               onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                showDragHandle: true,
-                builder: (ctx) => SafeArea(
+                showModalBottomSheet(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (ctx) => SafeArea(
                   child: ListView(
                     shrinkWrap: true,
                     children: [
@@ -424,174 +437,215 @@ class _AdminHomePageState extends State<AdminHomePage> {
       ),
       body: Column(
         children: [
+          // Main content area
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('communications')
-            .orderBy('timestamp', descending: true)
-            .limit(1)
-            .snapshots(),
-        builder: (context, snap) {
-          String subtitle = 'Open announcements chat';
-          String trailing = '';
-          if (snap.hasData && snap.data!.docs.isNotEmpty) {
-            final data = snap.data!.docs.first.data();
-            final msg = (data['message'] ?? data['text'] ?? '').toString();
-            subtitle = msg.isNotEmpty ? msg : subtitle;
-            final ts = data['timestamp'];
-            if (ts is Timestamp) trailing = _formatTime(ts.toDate());
-          }
+              stream: FirebaseFirestore.instance
+                  .collection('communications')
+                  .orderBy('timestamp', descending: true)
+                  .limit(1)
+                  .snapshots(),
+              builder: (context, snap) {
+                String subtitle = 'Open announcements chat';
+                String trailing = '';
+                if (snap.hasData && snap.data!.docs.isNotEmpty) {
+                  final data = snap.data!.docs.first.data();
+                  final msg = (data['message'] ?? data['text'] ?? '').toString();
+                  subtitle = msg.isNotEmpty ? msg : subtitle;
+                  final ts = data['timestamp'];
+                  if (ts is Timestamp) trailing = _formatTime(ts.toDate());
+                }
 
-          return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            children: [
-              // Announcements card on top
-        cardTile(
-                leading: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Colors.teal.shade400,
-                  child: const Text('A', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
+              GridView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 1.05,
                 ),
-                title: 'Announcements',
-                subtitle: subtitle,
-                trailing: trailing.isNotEmpty ? trailing : null,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/announcements',
-          arguments: {'userId': widget.currentUserId, 'role': widget.currentUserRole},
-                ),
-              ),
-
-              // Groups list below
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('groups')
-                    .where('members', arrayContains: widget.currentUserId)
-                    .snapshots(),
-                builder: (context, snapG) {
-                  if (snapG.hasError) return const SizedBox.shrink();
-                  final items = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(snapG.data?.docs ?? const []);
-                  items.sort((a, b) {
-                    final aTs = a.data()['lastTimestamp'];
-                    final bTs = b.data()['lastTimestamp'];
-                    Timestamp? aT;
-                    Timestamp? bT;
-                    if (aTs is Timestamp) aT = aTs;
-                    if (bTs is Timestamp) bT = bTs;
-                    int cmp;
-                    if (aT != null && bT != null) {
-                      cmp = bT.compareTo(aT);
-                    } else if (aT == null && bT == null) {
-                      final aC = a.data()['createdAt'];
-                      final bC = b.data()['createdAt'];
-                      Timestamp? aCt;
-                      Timestamp? bCt;
-                      if (aC is Timestamp) aCt = aC;
-                      if (bC is Timestamp) bCt = bC;
-                      if (aCt != null && bCt != null) {
-                        cmp = bCt.compareTo(aCt);
-                      } else {
-                        cmp = 0;
-                      }
-                    } else {
-                      cmp = (bT != null ? 1 : 0) - (aT != null ? 1 : 0);
-                    }
-                    return cmp;
-                  });
-                  if (items.isEmpty) return const SizedBox.shrink();
-                  return Column(
-                    children: [
-                      ...items.map((d) {
-                        final data = d.data();
-                        final photoUrl = (data['photoUrl'] ?? '') as String? ?? '';
-                        final emoji = (data['iconEmoji'] ?? '') as String? ?? '';
-                        final name = (data['name'] ?? 'Group') as String? ?? 'Group';
-                        final admins = ((data['admins'] as List?)?.map((e) => e.toString()).toList()) ?? const <String>[];
-                        final canDelete = admins.contains(widget.currentUserId) || (data['createdBy'] == widget.currentUserId);
-                        Widget avatar;
-                        if (photoUrl.isNotEmpty) {
-                          avatar = CircleAvatar(radius: 24, backgroundImage: NetworkImage(photoUrl));
-                        } else {
-                          final initial = name.isNotEmpty ? name[0].toUpperCase() : 'G';
-                          avatar = CircleAvatar(
-                            radius: 24,
-                            backgroundColor: Colors.blueGrey.shade300,
-                            child: emoji.isNotEmpty ? Text(emoji, style: const TextStyle(fontSize: 18)) : Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                          );
-                        }
-                        String timeText = '';
-                        final ts = d['lastTimestamp'];
-                        if (ts is Timestamp) {
-                          timeText = TimeOfDay.fromDateTime(ts.toDate()).format(context);
-                        }
-                        return cardTile(
-                          leading: avatar,
-                          title: name,
-                          subtitle: (data['lastMessage'] ?? '') as String? ?? '',
-                          trailing: timeText.isNotEmpty ? timeText : null,
-                          onTap: () => Navigator.pushNamed(
-                            context,
-                            '/groups/chat',
-                            arguments: {
-                              'groupId': d.id,
-                              'name': name,
-                              'userId': widget.currentUserId,
-                            },
-                          ),
-                          onLongPress: () async {
-                            if (!canDelete) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Only group admin can delete this group')));
-                              return;
-                            }
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Delete group?'),
-                                content: Text('Delete "$name" for all members? This cannot be undone.'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-                                ],
-                              ),
-                            );
-                            if (confirm != true) return;
-                            try {
-                              final groupRef = FirebaseFirestore.instance.collection('groups').doc(d.id);
-                              const page = 300;
-                              DocumentSnapshot? cursor;
-                              while (true) {
-                                Query q = groupRef.collection('messages').orderBy('timestamp').limit(page);
-                                if (cursor != null) {
-                                  q = (q as Query<Map<String, dynamic>>).startAfterDocument(cursor) as Query;
-                                }
-                                final snap = await q.get();
-                                if (snap.docs.isEmpty) break;
-                                final batch = FirebaseFirestore.instance.batch();
-                                for (final m in snap.docs) {
-                                  batch.delete(m.reference);
-                                }
-                                await batch.commit();
-                                cursor = snap.docs.last;
-                              }
-                              await groupRef.delete();
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
-                              }
-                            }
-                          },
+                children: [
+                  _buildFeatureCard(
+                    icon: Icons.campaign_outlined,
+                    title: 'Announcements',
+                    gradientColors: const [Color(0xFF00B4DB), Color(0xFF0083B0)],
+                    subtitle: subtitle,
+                    trailing: trailing.isNotEmpty ? trailing : null,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      '/announcements',
+                      arguments: {
+                        'userId': widget.currentUserId,
+                        'role': widget.currentUserRole,
+                      },
+                    ),
+                  ),
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('groups')
+                        .where('members', arrayContains: widget.currentUserId)
+                        .snapshots(),
+                    builder: (context, groupsSnap) {
+                      if (groupsSnap.hasError) {
+                        return _buildFeatureCard(
+                          icon: Icons.groups_outlined,
+                          title: 'Group Chats',
+                          gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
+                          subtitle: 'Unable to load groups',
+                          onTap: () {},
                         );
-                      }).toList(),
-                    ],
-                  );
-                },
+                      }
+                      if (groupsSnap.connectionState == ConnectionState.waiting) {
+                        return _buildFeatureCard(
+                          icon: Icons.groups_outlined,
+                          title: 'Group Chats',
+                          gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
+                          subtitle: 'Loading groups...',
+                          onTap: () {},
+                          isDisabled: true,
+                        );
+                      }
+
+                      final groups = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(groupsSnap.data?.docs ?? const []);
+                      if (groups.isNotEmpty) {
+                        groups.sort((a, b) {
+                          final aTs = a.data()['lastTimestamp'];
+                          final bTs = b.data()['lastTimestamp'];
+                          Timestamp? aT;
+                          Timestamp? bT;
+                          if (aTs is Timestamp) aT = aTs;
+                          if (bTs is Timestamp) bT = bTs;
+                          if (aT != null && bT != null) {
+                            return bT.compareTo(aT);
+                          }
+                          return 0;
+                        });
+                      }
+
+                      final groupCount = groups.length;
+                      final previewName = groupCount > 0 ? (groups.first.data()['name'] ?? 'Group') : 'No groups yet';
+                      final subtitleText = groupCount > 0
+                          ? 'Latest: ${previewName.toString()}'
+                          : 'Create or join a group';
+
+                      return _buildFeatureCard(
+                        icon: Icons.groups_outlined,
+                        title: 'Group Chats',
+                        gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
+                        subtitle: subtitleText,
+                        trailing: groupCount > 0 ? '$groupCount active' : null,
+                        onTap: () {
+                          if (groupCount == 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('No groups yet. Create one from settings.')),
+                            );
+                          } else {
+                            _showGroupsPicker(groups);
+                          }
+                        },
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.book_outlined,
+                    title: 'Homework',
+                    gradientColors: const [Color(0xFFAA076B), Color(0xFF61045F)],
+                    subtitle: 'Assign and track homework',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Homework module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.check_circle_outline,
+                    title: 'Attendance',
+                    gradientColors: const [Color(0xFF56AB2F), Color(0xFFA8E063)],
+                    subtitle: 'Monitor daily presence',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Attendance module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.school_outlined,
+                    title: 'Exam',
+                    gradientColors: const [Color(0xFF7F00FF), Color(0xFFE100FF)],
+                    subtitle: 'Schedule and manage exams',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Exam module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.event_busy,
+                    title: 'Leaves',
+                    gradientColors: const [Color(0xFFF7971E), Color(0xFFFFD200)],
+                    subtitle: 'Review leave requests',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Leaves module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.payment,
+                    title: 'Fees',
+                    gradientColors: const [Color(0xFF00C9FF), Color(0xFF92FE9D)],
+                    subtitle: 'Collect and reconcile fees',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Fees module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.directions_bus,
+                    title: 'Transport',
+                    gradientColors: const [Color(0xFF2193B0), Color(0xFF6DD5ED)],
+                    subtitle: 'Track routes & buses',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Transport module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.calendar_today,
+                    title: 'Calendar',
+                    gradientColors: const [Color(0xFFFF5858), Color(0xFFFFA734)],
+                    subtitle: 'Plan events & PTMs',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Calendar module - Coming soon!')),
+                      );
+                    },
+                  ),
+                  _buildFeatureCard(
+                    icon: Icons.assessment_outlined,
+                    title: 'Reports',
+                    gradientColors: const [Color(0xFF5433FF), Color(0xFF20BDFF), Color(0xFFA5FECB)],
+                    subtitle: 'Insights & analytics',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Reports module - Coming soon!')),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           );
         },
             ),
           ),
-          // Add cleanup notification at bottom
+          // Add cleanup reminder shortcut with existing workflow
           SimpleCleanupNotification(
             currentUserId: widget.currentUserId,
             currentUserRole: widget.currentUserRole,
@@ -604,6 +658,392 @@ class _AdminHomePageState extends State<AdminHomePage> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureCard({
+    required IconData icon,
+    required String title,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+    String? subtitle,
+    String? trailing,
+    bool isDisabled = false,
+  }) {
+    final colors = gradientColors.isNotEmpty ? gradientColors : [Colors.indigo, Colors.blueAccent];
+    final gradient = LinearGradient(colors: colors);
+    final accentColor = colors.last;
+    final inkRadius = BorderRadius.circular(20);
+
+    final cardBody = AnimatedOpacity(
+      duration: const Duration(milliseconds: 220),
+      opacity: isDisabled ? 0.6 : 1,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: inkRadius,
+          border: Border.all(color: accentColor.withOpacity(0.22), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withOpacity(0.16),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: ShaderMask(
+                    shaderCallback: (bounds) => gradient.createShader(bounds),
+                    child: Icon(icon, size: 32, color: Colors.white),
+                  ),
+                ),
+                const Spacer(),
+                if (trailing != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: gradient,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      trailing,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                subtitle ?? 'Tap to open',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                ShaderMask(
+                  shaderCallback: (bounds) => gradient.createShader(bounds),
+                  child: const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isDisabled ? 'Please wait' : 'Open',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: accentColor.withOpacity(isDisabled ? 0.4 : 0.9),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return InkWell(
+      borderRadius: inkRadius,
+      onTap: isDisabled ? null : onTap,
+      child: cardBody,
+    );
+  }
+
+  void _showGroupsPicker(List<QueryDocumentSnapshot<Map<String, dynamic>>> groups) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.groups_outlined, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Your groups',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    if (widget.currentUserRole == 'admin')
+                      IconButton(
+                        tooltip: 'Create group',
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.pushNamed(context, '/groups/new', arguments: {'userId': widget.currentUserId});
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 0),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: groups.length,
+                  itemBuilder: (context, index) {
+                    final doc = groups[index];
+                    final data = doc.data();
+                    final name = (data['name'] ?? 'Group').toString();
+                    final subtitle = (data['lastMessage'] ?? '').toString();
+                    Timestamp? ts;
+                    final rawTs = data['lastTimestamp'];
+                    if (rawTs is Timestamp) ts = rawTs;
+                    final timeLabel = ts != null ? TimeOfDay.fromDateTime(ts.toDate()).format(context) : '';
+                    final admins = ((data['admins'] as List?)?.map((e) => e.toString()).toList()) ?? const <String>[];
+                    final canDelete = admins.contains(widget.currentUserId) || data['createdBy'] == widget.currentUserId;
+
+                    return ListTile(
+                      leading: _buildGroupAvatar(data),
+                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: subtitle.isNotEmpty ? Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis) : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (timeLabel.isNotEmpty)
+                            Text(
+                              timeLabel,
+                              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                            ),
+                          if (canDelete)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              onPressed: () => _confirmDeleteGroup(ctx, doc.id, name),
+                              tooltip: 'Delete group for everyone',
+                            ),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.pushNamed(
+                          context,
+                          '/groups/chat',
+                          arguments: {
+                            'groupId': doc.id,
+                            'name': name,
+                            'userId': widget.currentUserId,
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupAvatar(Map<String, dynamic> data) {
+    final photoUrl = (data['photoUrl'] ?? '') as String? ?? '';
+    final emoji = (data['iconEmoji'] ?? '') as String? ?? '';
+    final name = (data['name'] ?? 'Group') as String? ?? 'Group';
+
+    if (photoUrl.isNotEmpty) {
+      return CircleAvatar(radius: 22, backgroundImage: NetworkImage(photoUrl));
+    }
+
+    if (emoji.isNotEmpty) {
+      return CircleAvatar(
+        radius: 22,
+        backgroundColor: Colors.blueGrey.shade100,
+        child: Text(emoji, style: const TextStyle(fontSize: 20)),
+      );
+    }
+
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'G';
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: Colors.blueGrey.shade300,
+      child: Text(
+        initial,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteGroup(BuildContext bottomSheetContext, String groupId, String name) async {
+    final confirm = await showDialog<bool>(
+      context: bottomSheetContext,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete group?'),
+        content: Text('Delete "$name" for all members? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(groupId);
+      const page = 300;
+      DocumentSnapshot? cursor;
+      while (true) {
+        Query q = groupRef.collection('messages').orderBy('timestamp').limit(page);
+        if (cursor != null) {
+          q = (q as Query<Map<String, dynamic>>).startAfterDocument(cursor) as Query;
+        }
+        final snap = await q.get();
+        if (snap.docs.isEmpty) break;
+        final batch = FirebaseFirestore.instance.batch();
+        for (final m in snap.docs) {
+          batch.delete(m.reference);
+        }
+        await batch.commit();
+        cursor = snap.docs.last;
+      }
+      await groupRef.delete();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Group "$name" deleted')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+}
+
+// Additional helper method for the main page
+extension AdminHomePageExtension on _AdminHomePageState {
+  Widget _buildFeatureCard({
+    required IconData icon,
+    required String title,
+    required List<Color> gradientColors,
+    String? subtitle,
+    String? trailing,
+    VoidCallback? onTap,
+  }) {
+    final gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: gradientColors,
+    );
+    
+    final accentColor = gradientColors.first;
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withOpacity(0.16),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: ShaderMask(
+                    shaderCallback: (bounds) => gradient.createShader(bounds),
+                    child: Icon(icon, size: 32, color: Colors.white),
+                  ),
+                ),
+                const Spacer(),
+                if (trailing != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: gradient,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      trailing,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.black54,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -684,4 +1124,93 @@ class AdminSettingsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+// Custom painter for S-curve background
+class SCurvePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFF667eea),  // Soft blue
+          Color(0xFF764ba2),  // Purple
+          Color(0xFF6B73FF),  // Light purple-blue
+          Color(0xFF9D50BB),  // Pink-purple
+        ],
+        stops: [0.0, 0.3, 0.7, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final path = Path();
+    
+    // Start from top-left
+    path.moveTo(0, 0);
+    
+    // Top edge
+    path.lineTo(size.width, 0);
+    
+    // Right edge with first curve
+    path.lineTo(size.width, size.height * 0.3);
+    
+    // First S-curve (going inward)
+    path.quadraticBezierTo(
+      size.width * 0.8, size.height * 0.5,
+      size.width * 0.7, size.height * 0.7
+    );
+    
+    // Second S-curve (going outward)
+    path.quadraticBezierTo(
+      size.width * 0.6, size.height * 0.9,
+      size.width, size.height
+    );
+    
+    // Bottom edge
+    path.lineTo(0, size.height);
+    
+    // Left edge with curves
+    path.quadraticBezierTo(
+      size.width * 0.3, size.height * 0.8,
+      size.width * 0.4, size.height * 0.6
+    );
+    
+    path.quadraticBezierTo(
+      size.width * 0.5, size.height * 0.4,
+      size.width * 0.2, size.height * 0.2
+    );
+    
+    // Back to start
+    path.lineTo(0, 0);
+    
+    canvas.drawPath(path, paint);
+    
+    // Add subtle shadow/overlay effect
+    final shadowPaint = Paint()
+      ..color = Colors.white.withOpacity(0.1)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    
+    // Draw some decorative curves
+    final decorPath = Path();
+    decorPath.moveTo(size.width * 0.1, size.height * 0.3);
+    decorPath.quadraticBezierTo(
+      size.width * 0.5, size.height * 0.1,
+      size.width * 0.9, size.height * 0.4
+    );
+    
+    canvas.drawPath(decorPath, shadowPaint);
+    
+    decorPath.reset();
+    decorPath.moveTo(size.width * 0.2, size.height * 0.6);
+    decorPath.quadraticBezierTo(
+      size.width * 0.6, size.height * 0.8,
+      size.width * 0.8, size.height * 0.5
+    );
+    
+    canvas.drawPath(decorPath, shadowPaint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

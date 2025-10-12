@@ -1372,6 +1372,7 @@ class CustomAnnouncementRenderer extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Question text
           Text(
@@ -1387,34 +1388,36 @@ class CustomAnnouncementRenderer extends StatelessWidget {
           ),
           SizedBox(height: spacing),
           // Options in row layout (horizontal)
-          Expanded(
-            child: Wrap(
-              spacing: spacing * 2,
-              runSpacing: spacing,
-              children: options.take(4).map((option) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: checkboxSize,
-                      height: checkboxSize,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: textColor, width: 1.5),
-                        borderRadius: BorderRadius.circular(3),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: spacing * 2,
+                runSpacing: spacing,
+                children: options.take(4).map((option) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: checkboxSize,
+                        height: checkboxSize,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: textColor, width: 1.5),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: spacing / 2),
-                    Text(
-                      option,
-                      style: GoogleFonts.getFont(
-                        fontFamily,
-                        fontSize: fontSize,
-                        color: textColor,
+                      SizedBox(width: spacing / 2),
+                      Text(
+                        option,
+                        style: GoogleFonts.getFont(
+                          fontFamily,
+                          fontSize: fontSize,
+                          color: textColor,
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }).toList(),
+                    ],
+                  );
+                }).toList(),
+              ),
             ),
           ),
         ],

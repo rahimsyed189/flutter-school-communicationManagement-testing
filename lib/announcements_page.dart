@@ -864,6 +864,9 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                                   List<Map<String, dynamic>>.from(data['videos'] as List) : 
                                   List<Map<String, dynamic>>.from(data['media'] as List),
                                 templateStyle: _getTemplateStyleFromString(data['templateStyle'] as String?),
+                                senderName: resolvedName,
+                                timestamp: time,
+                                timeString: timeStr,
                                 onOpenVideo: (url, isImage) async {
                                   if (isImage) {
                                     // For images, use smart priority opener (checks local files first)
@@ -1467,13 +1470,67 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                         },
                       );
 
+                      // Add footer with username and timestamp (but not for media posts - they have their own footer)
+                      // Check if this is a media post (r2-multi types)
+                      final isMediaPost = (data['type'] == 'r2-multi' && data['videos'] is List && (data['videos'] as List).isNotEmpty) ||
+                                         ((data['type'] == 'r2-multi-video' || data['type'] == 'r2-multi-image' || data['type'] == 'r2-multi-media') && 
+                                         data['media'] is List && (data['media'] as List).isNotEmpty);
+                      
+                      final bubbleWithFooter = isMediaPost ? bubble : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          bubble,
+                          Padding(
+                            padding: const EdgeInsets.only(left: 16, right: 16, top: 4, bottom: 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.person_outline,
+                                  size: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    resolvedName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.access_time,
+                                  size: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  time != null 
+                                    ? '${time.day}/${time.month}/${time.year} ${timeStr}'
+                                    : '',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                      
                       // Wrap in RepaintBoundary for better scrolling performance
                       final itemWidget = dayHeader != null 
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [dayHeader!, bubble],
+                              children: [dayHeader!, bubbleWithFooter],
                             )
-                          : bubble;
+                          : bubbleWithFooter;
                       
                       return RepaintBoundary(
                         key: ValueKey('announcement_${docs[index].id}'),
@@ -2132,11 +2189,17 @@ class _R2MultiVideoGrid extends StatefulWidget {
   final List<Map<String, dynamic>> videos; // each: {url, thumbnailUrl, width, height, ...}
   final void Function(String url, bool isImage) onOpenVideo;
   final MediaTemplateStyle templateStyle;
+  final String senderName;
+  final DateTime? timestamp;
+  final String timeString;
 
   const _R2MultiVideoGrid({
     required this.videos, 
     required this.onOpenVideo,
     this.templateStyle = MediaTemplateStyle.school,
+    required this.senderName,
+    this.timestamp,
+    required this.timeString,
   });
 
   @override
@@ -2837,180 +2900,67 @@ class _R2MultiVideoGridState extends State<_R2MultiVideoGrid> with AutomaticKeep
     return Container(
       width: 350,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header - Profile style
+          // Media Grid (Telegram style - clean and minimal)
           Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFE0F7FA), Color(0xFFF1F8E9)],
-              ),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-              border: const Border(
-                bottom: BorderSide(
-                  color: Color(0xFFD6E4F0),
-                  width: 2,
-                ),
-              ),
-            ),
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFF4CAFEF),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          _getTemplateEmoji(),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      _getTemplateTitle(),
-                      style: const TextStyle(
-                        fontFamily: 'Segoe UI',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: Color(0xFF2C3E50),
-                      ),
-                    ),
-                  ],
-                ),
-                // Save status indicator (replaces NEW badge)
-                AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (context, child) {
-                    final allSaved = _allSavedToGallery;
-                    final hasUnsaved = _galleryStatus.values.any((saved) => !saved);
-                    
-                    return Transform.scale(
-                      scale: (hasUnsaved && !_savingToGallery) ? _pulseAnimation.value : 1.0,
-                      child: GestureDetector(
-                        onTap: _savingToGallery ? null : _saveAllToGallery,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: allSaved 
-                              ? Colors.green 
-                              : _savingToGallery
-                                ? Colors.blue
-                                : Colors.amber,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_savingToGallery)
-                                const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  allSaved ? Icons.check_circle : Icons.save_alt,
-                                  color: Colors.white,
-                                  size: 12,
-                                ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _savingToGallery 
-                                  ? 'SAVING'
-                                  : allSaved 
-                                    ? 'SAVED' 
-                                    : 'SAVE',
-                                style: const TextStyle(
-                                  fontFamily: 'Segoe UI',
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          
-          // Body - Media Grid (WhatsApp style layout)
-          Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(4),
             child: Stack(
               children: [
                 _buildWhatsAppStyleGrid(show, extra, count),
-                // Download overlay
+                // Download overlay - Telegram style
                 if (!_isComplete)
                   Positioned.fill(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.black.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAFEF),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: DownloadAllOverlay(
-                            isDownloading: _downloading,
-                            progress: _downloading ? _progress : null,
-                            onPressed: () async {
-                              if (_downloading) return;
-                              await _startDownloadInApp();
-                            },
-                            idleLabel: 'Download in App',
+                        child: GestureDetector(
+                          onTap: _downloading ? null : () async {
+                            await _startDownloadInApp();
+                          },
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: _downloading
+                              ? Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: CircularProgressIndicator(
+                                    value: _progress,
+                                    strokeWidth: 3,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
+                                    backgroundColor: Colors.grey[200],
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.file_download_outlined,
+                                  size: 32,
+                                  color: Colors.blue[600],
+                                ),
                           ),
                         ),
                       ),
@@ -3020,56 +2970,116 @@ class _R2MultiVideoGridState extends State<_R2MultiVideoGrid> with AutomaticKeep
             ),
           ),
           
-          // Footer
+          // Bottom Action Bar (Telegram style)
           Container(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFF9FBE7), Color(0xFFFFFDE7)],
-              ),
+              color: Colors.grey[50],
               borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
-              border: const Border(
-                top: BorderSide(
-                  color: Color(0xFFEEEEEE),
-                  width: 1,
-                ),
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Text(
-                      '📌',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _downloading 
-                          ? 'Downloading to App... ${(_progress * 100).toStringAsFixed(1)}%'
-                          : _isComplete 
-                              ? 'Saved in App • Ready'
-                              : 'Posted by Admin',
-                      style: const TextStyle(
-                        fontFamily: 'Segoe UI',
-                        fontSize: 12,
-                        color: Color(0xFF444444),
+                // Left side - Username and timestamp
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          widget.senderName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.timestamp != null 
+                          ? '${widget.timestamp!.day}/${widget.timestamp!.month}/${widget.timestamp!.year} ${widget.timeString}'
+                          : '',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Right side - Save button
+                GestureDetector(
+                  onTap: _savingToGallery ? null : _saveAllToGallery,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _allSavedToGallery 
+                        ? Colors.green[50]
+                        : _savingToGallery
+                          ? Colors.blue[50]
+                          : Colors.blue[600],
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _allSavedToGallery 
+                          ? Colors.green
+                          : _savingToGallery
+                            ? Colors.blue
+                            : Colors.transparent,
+                        width: 1.5,
                       ),
                     ),
-                  ],
-                ),
-                Text(
-                  '${DateTime.now().day} ${_getMonthName(DateTime.now().month)} ${DateTime.now().year}',
-                  style: const TextStyle(
-                    fontFamily: 'Segoe UI',
-                    fontSize: 12,
-                    color: Color(0xFF444444),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_savingToGallery)
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[700]!),
+                            ),
+                          )
+                        else
+                          Icon(
+                            _allSavedToGallery ? Icons.check_circle : Icons.download_rounded,
+                            color: _allSavedToGallery ? Colors.green : Colors.white,
+                            size: 16,
+                          ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _savingToGallery 
+                            ? 'Saving'
+                            : _allSavedToGallery 
+                              ? 'Saved' 
+                              : 'Save',
+                          style: TextStyle(
+                            color: _allSavedToGallery ? Colors.green : _savingToGallery ? Colors.blue[700] : Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

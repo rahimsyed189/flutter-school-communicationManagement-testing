@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/draggable_template_components.dart';
 import 'widgets/color_picker_dialog.dart';
 
@@ -6202,14 +6203,73 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         
         final savedTemplateData = templateDoc.data()!;
         
-        // Get user profile from Firestore
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .get();
+        // Get user name - try multiple sources
+        String userName = '';
         
-        final userData = userDoc.data() ?? {};
-        final userName = userData['name'] ?? 'Unknown User';
+        print('🔍 Starting username resolution for userId: $userId, role: $userRole');
+        
+        // First, try SharedPreferences (session data)
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final sessionName = prefs.getString('session_name');
+          print('📱 SharedPreferences session_name: "$sessionName"');
+          if (sessionName != null && sessionName.trim().isNotEmpty) {
+            userName = sessionName.trim();
+            print('✅ Using session name: "$userName"');
+          }
+        } catch (e) {
+          print('❌ Could not get session name: $e');
+        }
+        
+        // If session name not found or empty, try Firestore user document
+        if (userName.isEmpty) {
+          print('🔄 Session name not found or empty, trying Firestore...');
+          try {
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .get();
+            
+            print('📄 User document exists: ${userDoc.exists}');
+            
+            if (userDoc.exists) {
+              final userData = userDoc.data() ?? {};
+              print('👤 User data fields: ${userData.keys.toList()}');
+              
+              // Try multiple possible field names, trim whitespace
+              final name = userData['name']?.toString().trim();
+              final username = userData['username']?.toString().trim();
+              final displayName = userData['displayName']?.toString().trim();
+              final email = userData['email']?.toString().trim();
+              
+              print('📋 Available names - name: "$name", username: "$username", displayName: "$displayName", email: "$email"');
+              
+              if (name != null && name.isNotEmpty) {
+                userName = name;
+              } else if (username != null && username.isNotEmpty) {
+                userName = username;
+              } else if (displayName != null && displayName.isNotEmpty) {
+                userName = displayName;
+              } else if (email != null && email.isNotEmpty) {
+                userName = email.split('@')[0];
+              }
+              
+              print('✅ Resolved username from Firestore: "$userName"');
+            } else {
+              print('⚠️ User document does not exist');
+            }
+          } catch (e) {
+            print('❌ Could not get user from Firestore: $e');
+          }
+        }
+        
+        // Final fallback based on role if still empty
+        if (userName.isEmpty) {
+          userName = userRole == 'admin' ? 'School Admin' : 'User';
+          print('⚠️ Using role-based fallback: "$userName"');
+        }
+        
+        print('📝 Final username for posting: "$userName" (ID: $userId, Role: $userRole)');
 
         // Debug: Check if border data exists in saved template
         print('📥 LOADING from Firestore - Border: color=${savedTemplateData['canvasBorderColor']}, width=${savedTemplateData['canvasBorderWidth']}, radius=${savedTemplateData['canvasBorderRadius']}');
@@ -6246,7 +6306,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           'title': savedTemplateData['templateName'] ?? 'Custom Template',
           'description': 'Posted from Template Builder',
           'senderId': userId,
-          'senderName': userName,
+          'senderName': userId,
           'senderRole': userRole,
           'timestamp': FieldValue.serverTimestamp(),
           'templateType': 'custom',

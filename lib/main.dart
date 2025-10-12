@@ -32,6 +32,7 @@ import 'admin_approvals_page.dart';
 import 'force_password_change_page.dart';
 import 'downloads_page.dart';
 import 'multi_r2_media_uploader_page.dart';
+import 'services/route_persistence_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {

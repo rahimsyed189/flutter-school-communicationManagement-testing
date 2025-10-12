@@ -178,156 +178,192 @@ class _SimpleCleanupNotificationState extends State<SimpleCleanupNotification> {
     final textColor = _isCompleted ? Colors.green.shade800 : (isAdmin ? Colors.orange.shade800 : Colors.blue.shade800);
     final subtitleColor = _isCompleted ? Colors.green.shade600 : (isAdmin ? Colors.orange.shade600 : Colors.blue.shade600);
     
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [backgroundColor1, backgroundColor2],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(44),
+                onTap: _isLoading ? null : _showCleanupSheet,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [backgroundColor1, backgroundColor2],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.28),
+                        blurRadius: 18,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        _isCompleted ? Icons.check_circle_outline : Icons.cleaning_services,
+                        color: iconColor,
+                        size: 34,
+                      ),
+                      if (_isLoading)
+                        SizedBox(
+                          width: 52,
+                          height: 52,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _isCompleted ? 'Cleanup done' : (isAdmin ? 'Admin cleanup' : 'Quick cleanup'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 2),
+            if (_completionMessage.isNotEmpty)
+              Text(
+                _completionMessage,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: subtitleColor),
+              )
+            else
+              Text(
+                _isCompleted
+                    ? 'Cache already cleared for today.'
+                    : (isAdmin
+                        ? 'Tap for full admin cleanup tools.'
+                        : 'Tap to free up storage on this device.'),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: subtitleColor),
+              ),
+            if (!_isCompleted)
+              TextButton(
+                onPressed: _isLoading ? null : _dismissNotification,
+                style: TextButton.styleFrom(foregroundColor: subtitleColor),
+                child: const Text('Dismiss for today', style: TextStyle(fontSize: 11)),
+              ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
-      child: Row(
-        children: [
-          Icon(
-            _isCompleted 
-              ? Icons.check_circle 
-              : (isAdmin ? Icons.admin_panel_settings : Icons.cleaning_services),
-            color: iconColor,
-            size: 24,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
+    );
+  }
+
+  void _showCleanupSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final isAdmin = widget.currentUserRole == 'admin';
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    Icon(
+                      _isCompleted ? Icons.check_circle_outline : Icons.cleaning_services,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _isCompleted
+                            ? 'Cache already clean'
+                            : (isAdmin ? 'Admin quick cleanup' : 'Quick cleanup assistant'),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(sheetContext),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Text(
-                  _isCompleted 
-                    ? '✅ Cleanup Complete!' 
-                    : (isAdmin ? '🧹 Daily Cleanup Reminder' : '🧹 Clean Your Device'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                    fontSize: 14,
+                  _isCompleted
+                      ? _completionMessage
+                      : (isAdmin
+                          ? 'Free up cached videos, app downloads, and thumbnails for everyone. Quick clean will remove files just from this device.'
+                          : 'Remove cached announcements and media downloads to reclaim storage on this device.'),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          Navigator.pop(sheetContext);
+                          if (_isCompleted) {
+                            widget.onFullCleanup?.call();
+                          } else {
+                            _performCacheCleanup();
+                          }
+                        },
+                  icon: Icon(_isCompleted ? Icons.manage_history : Icons.cleaning_services),
+                  label: Text(_isCompleted ? 'Open cleanup tools' : 'Clean now'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _isCompleted 
-                    ? _completionMessage
-                    : (isAdmin 
-                      ? 'Keep the app running smoothly with daily cleanup'
-                      : 'Free up space: Clear cache & downloaded media files'),
-                  style: TextStyle(
-                    color: subtitleColor,
-                    fontSize: 12,
+                const SizedBox(height: 12),
+                if (widget.onFullCleanup != null)
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      widget.onFullCleanup?.call();
+                    },
+                    icon: const Icon(Icons.settings_backup_restore),
+                    label: const Text('Advanced cleanup options'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
                   ),
-                ),
+                if (!_isCompleted) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _dismissNotification();
+                    },
+                    child: const Text('Remind me tomorrow'),
+                  ),
+                ],
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          if (_isCompleted) ...[
-            // Completed state: Show green OK button
-            SizedBox(
-              height: 32,
-              child: ElevatedButton.icon(
-                onPressed: null, // Disabled when completed
-                icon: const Icon(Icons.check, size: 16),
-                label: const Text('Done', style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.green.shade600,
-                  disabledForegroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-              ),
-            ),
-          ] else if (isAdmin) ...[
-            // Admin: Two buttons
-            SizedBox(
-              height: 32,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _performCacheCleanup,
-                icon: _isLoading 
-                  ? const SizedBox(
-                      width: 12, 
-                      height: 12, 
-                      child: CircularProgressIndicator(strokeWidth: 2)
-                    )
-                  : const Icon(Icons.cleaning_services, size: 16),
-                label: const Text('Cache', style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            SizedBox(
-              height: 32,
-              child: ElevatedButton.icon(
-                onPressed: widget.onFullCleanup,
-                icon: const Icon(Icons.settings, size: 16),
-                label: const Text('Full', style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          ] else ...[
-            // User: Single button
-            SizedBox(
-              height: 32,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _performCacheCleanup,
-                icon: _isLoading 
-                  ? const SizedBox(
-                      width: 12, 
-                      height: 12, 
-                      child: CircularProgressIndicator(strokeWidth: 2)
-                    )
-                  : const Icon(Icons.cleaning_services, size: 16),
-                label: const Text('Clean', style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(width: 6),
-          // Dismiss button
-          SizedBox(
-            height: 32,
-            width: 32,
-            child: IconButton(
-              onPressed: _dismissNotification,
-              icon: const Icon(Icons.close, size: 16),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.grey.shade300,
-                foregroundColor: Colors.grey.shade700,
-                padding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

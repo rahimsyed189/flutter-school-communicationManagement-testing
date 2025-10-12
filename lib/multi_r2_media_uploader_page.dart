@@ -12,6 +12,7 @@ import 'package:minio/minio.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:dotted_border/dotted_border.dart';
 import 'school_media_card_widget.dart';
 
 // Template styles for media display
@@ -599,437 +600,411 @@ class _MultiR2MediaUploaderPageState extends State<MultiR2MediaUploaderPage> {
     )).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('School Media Center'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
         elevation: 0,
-        foregroundColor: const Color(0xFF0B1220),
       ),
-      body: Container(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Center(
-          child: SchoolMediaCardWidget(
-            title: 'School Media Center',
-            subtitle: 'Upload & Share — Media Files',
-            senderInfo: 'Admin Panel',
-            recipientInfo: 'For: All Users',
-            timestamp: DateTime.now(),
-            mediaItems: mediaItems,
-            isUploadMode: true,
-            uploadControls: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE6F9F1), Color(0xFFE9F1FF)],
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 700),
+            child: DottedBorder(
+              color: Colors.blue.withOpacity(0.5),
+              strokeWidth: 2,
+              dashPattern: const [8, 4],
+              borderType: BorderType.RRect,
+              radius: const Radius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.02),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFF04324F).withOpacity(0.06),
-                ),
-              ),
-              child: Column(
-                children: [
-                  // Template selector with visual previews
-                  const Text(
-                    'Choose Template Style:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: Color(0xFF04324F),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // School Template
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _uploading ? null : () => setState(() => _selectedTemplate = MediaTemplateStyle.school),
-                          child: Container(
-                            height: 60,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF8AD7FF), Color(0xFFC6F7E6)],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _selectedTemplate == MediaTemplateStyle.school
-                                    ? const Color(0xFF04324F)
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                              boxShadow: _selectedTemplate == MediaTemplateStyle.school
-                                  ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF04324F).withOpacity(0.3),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'School Template',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF04324F),
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  const Icon(
-                                    Icons.school,
-                                    color: Color(0xFF04324F),
-                                    size: 16,
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    'Academic',
-                                    style: TextStyle(
-                                      fontSize: 7,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF04324F).withOpacity(0.8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Empty state - Show upload icon and text
+                    if (_items.isEmpty) ...[
+                      // Upload Icon
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.cloud_upload_outlined,
+                          size: 80,
+                          color: Colors.blue.shade400,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      // Business Template
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _uploading ? null : () => setState(() => _selectedTemplate = MediaTemplateStyle.business),
-                          child: Container(
-                            height: 60,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF1E293B), Color(0xFF334155)],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _selectedTemplate == MediaTemplateStyle.business
-                                    ? Colors.white
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                              boxShadow: _selectedTemplate == MediaTemplateStyle.business
-                                  ? [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.3),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'Business Template',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  const Icon(
-                                    Icons.business,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    'Professional',
-                                    style: TextStyle(
-                                      fontSize: 7,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white.withOpacity(0.8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Title
+                      Text(
+                        'Upload Media Files',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      // Modern Template
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _uploading ? null : () => setState(() => _selectedTemplate = MediaTemplateStyle.modern),
-                          child: Container(
-                            height: 60,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _selectedTemplate == MediaTemplateStyle.modern
-                                    ? Colors.white
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                              boxShadow: _selectedTemplate == MediaTemplateStyle.modern
-                                  ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF8B5CF6).withOpacity(0.3),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'Modern Template',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  const Icon(
-                                    Icons.auto_awesome,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    'Creative',
-                                    style: TextStyle(
-                                      fontSize: 7,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white.withOpacity(0.8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                      
+                      const SizedBox(height: 8),
+                      
+                      // Subtitle
+                      Text(
+                        'Select photos and videos to share',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: Colors.grey[600],
                         ),
                       ),
+                      
+                      const SizedBox(height: 32),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Template preview
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF04324F).withOpacity(0.1),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Preview: ${_getTemplateName(_selectedTemplate)}',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
-                          ),
+                    
+                    // Media Grid - Show when items selected
+                    if (_items.isNotEmpty) ...[
+                      // Media Grid
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1,
                         ),
-                        const SizedBox(height: 4),
-                        Container(
-                          height: 40,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: _getTemplateGradient(_selectedTemplate),
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _getTemplateAccent(_selectedTemplate).withOpacity(0.2),
-                            ),
-                          ),
-                          child: Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.9),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'Your media style',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  color: _getTemplateAccent(_selectedTemplate),
+                        itemCount: _items.length,
+                        itemBuilder: (context, index) {
+                          final item = _items[index];
+                          return Stack(
+                            children: [
+                              // Thumbnail Container
+                              Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: item.failed == true
+                                        ? Colors.red[300]!
+                                        : item.uploading == true
+                                            ? Colors.blue[300]!
+                                            : Colors.grey[300]!,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: item.thumbPath != null
+                                      ? Image.file(
+                                          File(item.thumbPath!),
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                        )
+                                      : Container(
+                                          color: Colors.grey[100],
+                                          child: Icon(
+                                            item.mediaType == MediaType.video
+                                                ? Icons.videocam
+                                                : Icons.image,
+                                            size: 40,
+                                            color: Colors.grey[400],
+                                          ),
+                                        ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Quality selector
-                  Row(
-                    children: [
-                      const Text(
-                        'Video Quality: ',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          color: Color(0xFF04324F),
-                        ),
-                      ),
-                      Expanded(
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<UploadQuality>(
-                            value: _quality,
-                            onChanged: _uploading ? null : (q) => setState(() => _quality = q ?? UploadQuality.medium),
-                            style: const TextStyle(
-                              color: Color(0xFF04324F),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            isDense: true,
-                            items: const [
-                              DropdownMenuItem(value: UploadQuality.low, child: Text('Low', style: TextStyle(fontSize: 11))),
-                              DropdownMenuItem(value: UploadQuality.medium, child: Text('Medium', style: TextStyle(fontSize: 11))),
-                              DropdownMenuItem(value: UploadQuality.high, child: Text('High', style: TextStyle(fontSize: 11))),
-                              DropdownMenuItem(value: UploadQuality.original, child: Text('Original', style: TextStyle(fontSize: 11))),
+                              
+                              // Media Type Badge
+                              Positioned(
+                                top: 6,
+                                left: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: item.mediaType == MediaType.video
+                                        ? Colors.red[600]!.withOpacity(0.9)
+                                        : Colors.green[600]!.withOpacity(0.9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        item.mediaType == MediaType.video
+                                            ? Icons.play_circle_outline
+                                            : Icons.image,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                      if (item.duration != null) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _formatDuration(item.duration!),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              // Remove Button
+                              if (!_uploading)
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _items.removeAt(index));
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.2),
+                                            blurRadius: 4,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                        Icons.close,
+                                        size: 16,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              
+                              // Progress Overlay
+                              if (item.uploading == true && item.progress != null)
+                                Positioned.fill(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.6),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: 36,
+                                            height: 36,
+                                            child: CircularProgressIndicator(
+                                              value: item.progress,
+                                              color: Colors.white,
+                                              strokeWidth: 3,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            '${(item.progress! * 100).toInt()}%',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              
+                              // Failed State
+                              if (item.failed == true)
+                                Positioned.fill(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.8),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: const [
+                                        Icon(
+                                          Icons.error_outline,
+                                          color: Colors.white,
+                                          size: 32,
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Failed',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                             ],
-                          ),
-                        ),
+                          );
+                        },
                       ),
+                      
+                      const SizedBox(height: 24),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Buttons row
-                  Row(
-                    children: [
-                      Expanded(
+                    
+                    // Video Quality Selector
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.settings,
+                            size: 18,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Quality:',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<UploadQuality>(
+                              value: _quality,
+                              onChanged: _uploading ? null : (q) => setState(() => _quality = q ?? UploadQuality.medium),
+                              style: TextStyle(
+                                color: Colors.blue[700],
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: UploadQuality.low, child: Text('Low')),
+                                DropdownMenuItem(value: UploadQuality.medium, child: Text('Medium')),
+                                DropdownMenuItem(value: UploadQuality.high, child: Text('High')),
+                                DropdownMenuItem(value: UploadQuality.original, child: Text('Original')),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Select/Upload Buttons
+                    if (_items.isEmpty)
+                      // Select Media Button (Empty state)
+                      SizedBox(
+                        width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: _uploading ? null : _pickMedia,
-                          icon: const Icon(Icons.add_photo_alternate),
+                          icon: const Icon(Icons.add_photo_alternate, size: 24),
                           label: const Text(
-                            'Select Media',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                            'Select Media Files',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF04324F),
+                            backgroundColor: Colors.blue[600],
                             foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            elevation: 0,
                           ),
                         ),
+                      )
+                    else
+                      // Action Buttons Row (When items selected)
+                      Row(
+                        children: [
+                          // Add More Icon Button
+                          IconButton(
+                            onPressed: _uploading ? null : _pickMedia,
+                            icon: const Icon(Icons.add_circle_outline),
+                            iconSize: 40,
+                            color: Colors.blue[600],
+                            tooltip: 'Add More Media',
+                          ),
+                          
+                          const SizedBox(width: 12),
+                          
+                          // Upload All Button
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _uploading || _items.isEmpty ? null : _startUpload,
+                              icon: const Icon(Icons.cloud_upload, size: 22),
+                              label: const Text(
+                                'Upload All',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue[600],
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 2,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFB6F0E0), Color(0xFFBFE0FF)],
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF04324F).withOpacity(0.12),
-                                blurRadius: 30,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton.icon(
-                            onPressed: _uploading ? null : _startUpload,
-                            icon: const Icon(Icons.cloud_upload),
-                            label: const Text(
-                              'Upload All',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              foregroundColor: const Color(0xFF04324F),
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
+                    
+                    // Supported formats (only in empty state)
+                    if (_items.isEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Supports: JPG, PNG, GIF, MP4, MOV',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
                         ),
                       ),
                     ],
-                  ),
-                  if (_loadingCfg) ...[
-                    const SizedBox(height: 12),
-                    LinearProgressIndicator(
-                      backgroundColor: const Color(0xFF64748B).withOpacity(0.1),
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF04324F)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            progressOverlay: _uploading ? Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 64,
-                      height: 64,
-                      child: CircularProgressIndicator(
-                        value: _overallProgress,
-                        strokeWidth: 6,
-                        backgroundColor: const Color(0xFF64748B).withOpacity(0.1),
-                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF04324F)),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _status ?? 'Uploading...',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF04324F),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(_overallProgress * 100).toStringAsFixed(1)}% completed',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: const Color(0xFF64748B).withOpacity(0.8),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ) : null,
+            ),
           ),
         ),
       ),
