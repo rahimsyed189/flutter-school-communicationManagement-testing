@@ -60,21 +60,22 @@ class _AdminHomePageState extends State<AdminHomePage> {
     
     _loadGradientColors(); // Load custom gradient colors
     
-    // Check if image is already loaded in memory (from previous navigation)
-    if (_bgCache.isLoaded && _bgCache.cachedImagePath != null) {
-      // Image already in memory - use it immediately, no loading needed
-      setState(() {
-        _backgroundImageUrl = _bgCache.cachedImagePath;
-        _cachedImageProvider = _bgCache.cachedImageProvider;
-        _isLoadingBackground = false;
-        _showContent = true;
-      });
-      debugPrint('✅ Background image loaded from memory cache (instant, no disk read)');
-      return;
-    }
-    
-    // Otherwise, load from disk/R2
-    _checkAndLoadBackgroundImage();
+    // Load background image AFTER first frame is painted (non-blocking)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Check if image is already loaded in memory (from previous navigation)
+      if (_bgCache.isLoaded && _bgCache.cachedImagePath != null) {
+        // Image already in memory - use it immediately
+        setState(() {
+          _backgroundImageUrl = _bgCache.cachedImagePath;
+          _cachedImageProvider = _bgCache.cachedImageProvider;
+        });
+        debugPrint('✅ Background image loaded from memory cache (instant, no disk read)');
+        return;
+      }
+      
+      // Otherwise, load from disk/R2 in background (won't block UI)
+      _checkAndLoadBackgroundImage();
+    });
   }
   
   Future<void> _loadGradientColors() async {
@@ -114,35 +115,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
         _bgCache.cachedImageProvider = _cachedImageProvider;
         _bgCache.isLoaded = true;
         
-        // Use local cached image - no loading needed
+        // Use local cached image - no loading overlay needed
         if (mounted) {
           setState(() {
             _backgroundImageUrl = localImageFile.path;
-            _isLoadingBackground = false;
-            _showContent = true;
           });
         }
         debugPrint('✅ Background image loaded from disk cache and saved to memory: $localImagePath');
         return; // Return early - image is cached, no need to download
       }
 
-      // If no cache exists, show loading WITH CONTENT (so background shows while loading)
-      if (mounted) {
-        setState(() {
-          _isLoadingBackground = true;
-          _showContent = true; // Keep content visible so background gradient shows
-        });
-      }
-      
-      // Set timeout for loading
-      Future.delayed(const Duration(seconds: 4), () {
-        if (mounted && _isLoadingBackground) {
-          setState(() {
-            _showContent = true;
-            _isLoadingBackground = false;
-          });
-        }
-      });
+      // If no cache exists, load in background WITHOUT blocking UI
+      // (No loading overlay, just quietly load the image)
       
       await _loadBackgroundImage();
     } catch (e) {
@@ -239,11 +223,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
             _bgCache.cachedImageProvider = _cachedImageProvider;
             _bgCache.isLoaded = true;
             
+            // Update background image without loading overlay
             if (mounted) {
               setState(() {
                 _backgroundImageUrl = localImageFile.path;
-                _isLoadingBackground = false;
-                _showContent = true;
               });
             }
             debugPrint('✅ Background image loaded from R2 and saved to memory cache');
@@ -794,219 +777,147 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   ),
                 ),
               ),
-              // Main content area
+              // Main content area - Simple 2-column grid
               Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('communications')
-                  .orderBy('timestamp', descending: true)
-                  .limit(1)
-                  .snapshots(),
-              builder: (context, snap) {
-                // Always render content regardless of connection state
-                String subtitle = 'Open announcements chat';
-                String trailing = '';
-                
-                // Only update subtitle if we have data
-                if (snap.hasData && snap.data!.docs.isNotEmpty) {
-                  final data = snap.data!.docs.first.data();
-                  final msg = (data['message'] ?? data['text'] ?? '').toString();
-                  subtitle = msg.isNotEmpty ? msg : subtitle;
-                  final ts = data['timestamp'];
-                  if (ts is Timestamp) trailing = _formatTime(ts.toDate());
-                }
-
-                return ListView(
-                  key: const ValueKey('main_list_view'), // Add key to prevent rebuild issues
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
                   children: [
-              GridView(
-                key: const ValueKey('main_grid_view'), // Add key to ensure grid identity
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.05,
-                ),
-                children: [
-                  _buildFeatureCard(
-                    icon: Icons.campaign_outlined,
-                    title: 'Announcements',
-                    gradientColors: const [Color(0xFF00B4DB), Color(0xFF0083B0)],
-                    subtitle: subtitle,
-                    trailing: trailing.isNotEmpty ? trailing : null,
-                    onTap: () => Navigator.pushNamed(
-                      context,
-                      '/announcements',
-                      arguments: {
-                        'userId': widget.currentUserId,
-                        'role': widget.currentUserRole,
-                      },
-                    ),
-                  ),
-                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('groups')
-                        .where('members', arrayContains: widget.currentUserId)
-                        .snapshots(),
-                    builder: (context, groupsSnap) {
-                      if (groupsSnap.hasError) {
-                        return _buildFeatureCard(
+                    GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.05,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _buildFeatureCard(
+                          icon: Icons.campaign_outlined,
+                          title: 'Announcements',
+                          gradientColors: const [Color(0xFF00B4DB), Color(0xFF0083B0)],
+                          subtitle: 'Open announcements',
+                          onTap: () => Navigator.pushNamed(
+                            context,
+                            '/announcements',
+                            arguments: {
+                              'userId': widget.currentUserId,
+                              'role': widget.currentUserRole,
+                            },
+                          ),
+                        ),
+                        _buildFeatureCard(
                           icon: Icons.groups_outlined,
                           title: 'Group Chats',
                           gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
-                          subtitle: 'Unable to load groups',
-                          onTap: () {},
-                        );
-                      }
-                      if (groupsSnap.connectionState == ConnectionState.waiting) {
-                        return _buildFeatureCard(
-                          icon: Icons.groups_outlined,
-                          title: 'Group Chats',
-                          gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
-                          subtitle: 'Loading groups...',
-                          onTap: () {},
-                          isDisabled: true,
-                        );
-                      }
-
-                      final groups = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(groupsSnap.data?.docs ?? const []);
-                      if (groups.isNotEmpty) {
-                        groups.sort((a, b) {
-                          final aTs = a.data()['lastTimestamp'];
-                          final bTs = b.data()['lastTimestamp'];
-                          Timestamp? aT;
-                          Timestamp? bT;
-                          if (aTs is Timestamp) aT = aTs;
-                          if (bTs is Timestamp) bT = bTs;
-                          if (aT != null && bT != null) {
-                            return bT.compareTo(aT);
-                          }
-                          return 0;
-                        });
-                      }
-
-                      final groupCount = groups.length;
-                      final previewName = groupCount > 0 ? (groups.first.data()['name'] ?? 'Group') : 'No groups yet';
-                      final subtitleText = groupCount > 0
-                          ? 'Latest: ${previewName.toString()}'
-                          : 'Create or join a group';
-
-                      return _buildFeatureCard(
-                        icon: Icons.groups_outlined,
-                        title: 'Group Chats',
-                        gradientColors: const [Color(0xFFFF512F), Color(0xFFF09819)],
-                        subtitle: subtitleText,
-                        trailing: groupCount > 0 ? '$groupCount active' : null,
-                        onTap: () {
-                          if (groupCount == 0) {
+                          subtitle: 'View your groups',
+                          onTap: () {
+                            FirebaseFirestore.instance
+                                .collection('groups')
+                                .where('members', arrayContains: widget.currentUserId)
+                                .get()
+                                .then((snapshot) {
+                              if (snapshot.docs.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No groups yet')),
+                                );
+                              } else {
+                                _showGroupsPicker(snapshot.docs);
+                              }
+                            });
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.book_outlined,
+                          title: 'Homework',
+                          gradientColors: const [Color(0xFFAA076B), Color(0xFF61045F)],
+                          subtitle: 'Assign and track',
+                          onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('No groups yet. Create one from settings.')),
+                              const SnackBar(content: Text('Coming soon!')),
                             );
-                          } else {
-                            _showGroupsPicker(groups);
-                          }
-                        },
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.book_outlined,
-                    title: 'Homework',
-                    gradientColors: const [Color(0xFFAA076B), Color(0xFF61045F)],
-                    subtitle: 'Assign and track homework',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Homework module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.check_circle_outline,
-                    title: 'Attendance',
-                    gradientColors: const [Color(0xFF56AB2F), Color(0xFFA8E063)],
-                    subtitle: 'Monitor daily presence',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Attendance module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.school_outlined,
-                    title: 'Exam',
-                    gradientColors: const [Color(0xFF7F00FF), Color(0xFFE100FF)],
-                    subtitle: 'Schedule and manage exams',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Exam module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.event_busy,
-                    title: 'Leaves',
-                    gradientColors: const [Color(0xFFF7971E), Color(0xFFFFD200)],
-                    subtitle: 'Review leave requests',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Leaves module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.payment,
-                    title: 'Fees',
-                    gradientColors: const [Color(0xFF00C9FF), Color(0xFF92FE9D)],
-                    subtitle: 'Collect and reconcile fees',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Fees module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.directions_bus,
-                    title: 'Transport',
-                    gradientColors: const [Color(0xFF2193B0), Color(0xFF6DD5ED)],
-                    subtitle: 'Track routes & buses',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Transport module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.calendar_today,
-                    title: 'Calendar',
-                    gradientColors: const [Color(0xFFFF5858), Color(0xFFFFA734)],
-                    subtitle: 'Plan events & PTMs',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Calendar module - Coming soon!')),
-                      );
-                    },
-                  ),
-                  _buildFeatureCard(
-                    icon: Icons.assessment_outlined,
-                    title: 'Reports',
-                    gradientColors: const [Color(0xFF5433FF), Color(0xFF20BDFF), Color(0xFFA5FECB)],
-                    subtitle: 'Insights & analytics',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Reports module - Coming soon!')),
-                      );
-                    },
-                  ),
-                ],
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.check_circle_outline,
+                          title: 'Attendance',
+                          gradientColors: const [Color(0xFF56AB2F), Color(0xFFA8E063)],
+                          subtitle: 'Monitor presence',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.school_outlined,
+                          title: 'Exam',
+                          gradientColors: const [Color(0xFF7F00FF), Color(0xFFE100FF)],
+                          subtitle: 'Manage exams',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.event_busy,
+                          title: 'Leaves',
+                          gradientColors: const [Color(0xFFF7971E), Color(0xFFFFD200)],
+                          subtitle: 'Leave requests',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.payment,
+                          title: 'Fees',
+                          gradientColors: const [Color(0xFF00C9FF), Color(0xFF92FE9D)],
+                          subtitle: 'Collect fees',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.directions_bus,
+                          title: 'Transport',
+                          gradientColors: const [Color(0xFF2193B0), Color(0xFF6DD5ED)],
+                          subtitle: 'Track routes',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.calendar_today,
+                          title: 'Calendar',
+                          gradientColors: const [Color(0xFFFF5858), Color(0xFFFFA734)],
+                          subtitle: 'Plan events',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                        _buildFeatureCard(
+                          icon: Icons.assessment_outlined,
+                          title: 'Reports',
+                          gradientColors: const [Color(0xFF5433FF), Color(0xFF20BDFF), Color(0xFFA5FECB)],
+                          subtitle: 'Analytics',
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Coming soon!')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          );
-        },
-      ),
-    ),
           // Add cleanup reminder shortcut with existing workflow
           SimpleCleanupNotification(
             currentUserId: widget.currentUserId,
