@@ -32,6 +32,8 @@ import 'admin_approvals_page.dart';
 import 'force_password_change_page.dart';
 import 'downloads_page.dart';
 import 'multi_r2_media_uploader_page.dart';
+import 'students_page.dart';
+import 'staff_page.dart';
 import 'services/route_persistence_service.dart';
 
 @pragma('vm:entry-point')
@@ -372,6 +374,12 @@ class MyApp extends StatelessWidget {
           final userId = args?['userId'] ?? '';
           final role = args?['role'] ?? 'user';
           return MaterialPageRoute(builder: (_) => MultiR2MediaUploaderPage(currentUserId: userId, currentUserRole: role));
+        }
+        if (settings.name == '/students') {
+          return MaterialPageRoute(builder: (_) => const StudentsPage());
+        }
+        if (settings.name == '/staff') {
+          return MaterialPageRoute(builder: (_) => const StaffPage());
         }
         return null;
       },

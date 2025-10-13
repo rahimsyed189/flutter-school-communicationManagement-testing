@@ -11,6 +11,8 @@ import 'notification_service.dart';
 import 'youtube_uploader_page.dart';
 import 'video_upload_settings_page.dart';
 import 'r2_config_page.dart';
+import 'gemini_config_page.dart';
+import 'dynamic_students_page.dart';
 import 'simple_cleanup_notification.dart';
 import 'admin_cleanup_page.dart';
 import 'server_cleanup_page.dart';
@@ -411,22 +413,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
           // Content (always show but will be blurred when loading)
           Column(
             children: [
-              // Custom Header
+              // Custom Header - Compact (no title)
               Container(
-                  height: 160,
+                  height: 70, // Reduced from 160
                   child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        // Top Row with back button and actions
-                        Row(
-                          children: [
-                            const Spacer(),
+                        // Settings icon (Right side only)
                             if (widget.currentUserRole == 'admin')
                               IconButton(
-                                icon: const Icon(Icons.settings, color: Colors.white),
+                                icon: const Icon(Icons.settings, color: Colors.white, size: 28),
                                 onPressed: () {
                                   showModalBottomSheet(
                                     context: context,
@@ -622,6 +621,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               );
                             },
                           ),
+                          ListTile(
+                            leading: const Icon(Icons.auto_awesome, color: Colors.purple),
+                            title: const Text('Gemini AI Config'),
+                            subtitle: const Text('AI-powered dynamic form generation'),
+                            trailing: const Icon(Icons.new_releases, color: Colors.purple, size: 16),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const GeminiConfigPage()),
+                              );
+                            },
+                          ),
                           const Divider(height: 0),
                           ListTile(
                             leading: const Icon(Icons.wallpaper, color: Colors.purple),
@@ -761,18 +772,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                 },
                               ),
                           ],
-                        ),
-                        const Spacer(),
-                        // Title
-                        const Text(
-                          'Current Page',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),
@@ -913,6 +912,42 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             );
                           },
                         ),
+                        // Students - Admin only
+                        if (widget.currentUserRole == 'admin')
+                          _buildFeatureCard(
+                            icon: Icons.people_outline,
+                            title: 'Students',
+                            gradientColors: const [Color(0xFF667eea), Color(0xFF764ba2)],
+                            subtitle: 'Manage students',
+                            onTap: () {
+                              Navigator.pushNamed(context, '/students');
+                            },
+                          ),
+                        // AI Students - Admin only (NEW)
+                        if (widget.currentUserRole == 'admin')
+                          _buildFeatureCard(
+                            icon: Icons.auto_awesome,
+                            title: 'AI Students',
+                            gradientColors: const [Color(0xFF8E2DE2), Color(0xFF4A00E0)],
+                            subtitle: 'Dynamic AI forms',
+                            trailing: 'NEW',
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const DynamicStudentsPage()),
+                              );
+                            },
+                          ),
+                        // Staff - Admin only
+                        if (widget.currentUserRole == 'admin')
+                          _buildFeatureCard(
+                            icon: Icons.badge_outlined,
+                            title: 'Staff',
+                            gradientColors: const [Color(0xFFf093fb), Color(0xFFf5576c)],
+                            subtitle: 'Manage staff',
+                            onTap: () {
+                              Navigator.pushNamed(context, '/staff');
+                            },
+                          ),
                       ],
                     ),
                   ],
@@ -1429,6 +1464,31 @@ class AdminSettingsPage extends StatelessWidget {
                 if (result is Map && result['url'] is String) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload finished')));
                 }
+              },
+            ),
+            const Divider(height: 0, thickness: 2),
+            const ListTile(
+              title: Text('API Configurations', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud, color: Colors.blue),
+              title: const Text('R2 Config'),
+              subtitle: const Text('Cloudflare R2 storage settings'),
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const R2ConfigPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome, color: Colors.purple),
+              title: const Text('Gemini AI Config'),
+              subtitle: const Text('AI-powered dynamic form generation'),
+              trailing: const Icon(Icons.new_releases, color: Colors.purple, size: 20),
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const GeminiConfigPage()),
+                );
               },
             ),
           ],
