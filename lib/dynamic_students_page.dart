@@ -12,17 +12,28 @@ class DynamicStudentsPage extends StatefulWidget {
   State<DynamicStudentsPage> createState() => _DynamicStudentsPageState();
 }
 
-class _DynamicStudentsPageState extends State<DynamicStudentsPage> {
+class _DynamicStudentsPageState extends State<DynamicStudentsPage> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _values = {};
   List<Map<String, dynamic>> _formFields = [];
   bool _loading = true;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadFormConfig();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    for (var controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _loadFormConfig() async {
@@ -183,58 +194,180 @@ class _DynamicStudentsPageState extends State<DynamicStudentsPage> {
 
   Widget _buildDynamicForm() {
     if (_formFields.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.auto_awesome, size: 64, color: Colors.purple),
-            const SizedBox(height: 16),
-            const Text(
-              'No form fields configured yet',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap the AI button to generate fields',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _openAIFormBuilder,
-              icon: const Icon(Icons.psychology),
-              label: const Text('Generate Fields with AI'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      return Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(32.0),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(40),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFF6366F1),
+                      Color(0xFF8B5CF6),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withOpacity(0.3),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  size: 80,
+                  color: Colors.white,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 40),
+              const Text(
+                'No Form Fields Yet',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Let AI create a perfect form for you',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 50),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFF6366F1),
+                      Color(0xFF8B5CF6),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withOpacity(0.4),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: _openAIFormBuilder,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 20,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.psychology_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          SizedBox(width: 12),
+                          Text(
+                            'Generate with AI',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return Form(
-      key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Use enhanced grouped form builder with beautiful styling
-          ...DynamicFormBuilderEnhanced.buildGroupedFields(
-            fields: _formFields,
-            controllers: _controllers,
-          ),
-          
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: _addStudent,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Student'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.all(16),
+    return Container(
+      color: Colors.white,
+      child: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            // Use enhanced grouped form builder with beautiful styling
+            ...DynamicFormBuilderEnhanced.buildGroupedFields(
+              fields: _formFields,
+              controllers: _controllers,
             ),
-          ),
-        ],
+            
+            const SizedBox(height: 30),
+            Container(
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF6366F1),
+                    Color(0xFF8B5CF6),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withOpacity(0.4),
+                    blurRadius: 20,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _addStudent,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(
+                        Icons.add_circle_outline,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Add Student',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -244,51 +377,206 @@ class _DynamicStudentsPageState extends State<DynamicStudentsPage> {
       stream: FirebaseFirestore.instance.collection('students').orderBy('createdAt', descending: true).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return Container(
+            color: Colors.white,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 80,
+                    color: Colors.red,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return Container(
+            color: Colors.white,
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                strokeWidth: 3,
+              ),
+            ),
+          );
         }
 
         final students = snapshot.data!.docs;
 
         if (students.isEmpty) {
-          return const Center(
-            child: Text('No students added yet'),
+          return Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(32),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey.shade100,
+                      border: Border.all(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.people_outline,
+                      size: 80,
+                      color: Colors.grey.shade400,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'No Students Yet',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Add your first student to get started',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 
-        return ListView.builder(
-          itemCount: students.length,
-          padding: const EdgeInsets.all(8),
-          itemBuilder: (context, index) {
-            final doc = students[index];
-            final data = doc.data() as Map<String, dynamic>;
+        return Container(
+          color: Colors.white,
+          child: ListView.builder(
+            itemCount: students.length,
+            padding: const EdgeInsets.all(20),
+            itemBuilder: (context, index) {
+              final doc = students[index];
+              final data = doc.data() as Map<String, dynamic>;
 
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  _getDisplayValue(data, 'name') ?? 
-                  _getDisplayValue(data, 'studentName') ?? 
-                  'Student ${index + 1}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      // Future: Navigate to student details
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFF6366F1),
+                                  Color(0xFF8B5CF6),
+                                ],
+                              ),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF6366F1).withOpacity(0.3),
+                                  blurRadius: 12,
+                                  spreadRadius: 0,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.person_rounded,
+                              color: Colors.white,
+                              size: 32,
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _getDisplayValue(data, 'name') ?? 
+                                  _getDisplayValue(data, 'studentName') ?? 
+                                  'Student ${index + 1}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: Color(0xFF1F2937),
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                ..._buildStudentDetails(data),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.red.shade100,
+                                width: 1,
+                              ),
+                            ),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.red.shade600,
+                                size: 22,
+                              ),
+                              onPressed: () => _deleteStudent(doc.id),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _buildStudentDetails(data),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _deleteStudent(doc.id),
-                ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -313,55 +601,128 @@ class _DynamicStudentsPageState extends State<DynamicStudentsPage> {
       
       if (value != null && value.isNotEmpty && fieldName != 'name' && fieldName != 'studentName') {
         details.add(
-          Text(
-            '$label: $value',
-            style: const TextStyle(fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 4,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF6366F1),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$label: $value',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }
     }
 
-    return details.isEmpty ? [const Text('No additional information')] : details;
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _controllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
+    return details.isEmpty 
+        ? [
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'No additional information',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF9CA3AF),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ] 
+        : details;
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Students (AI-Powered)'),
-          backgroundColor: Colors.blue,
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.add), text: 'Add Student'),
-              Tab(icon: Icon(Icons.list), text: 'All Students'),
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Students Management'),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: const Color(0xFF6366F1),
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: const Color(0xFF6366F1),
+          indicatorWeight: 3,
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.person_add_rounded),
+              text: 'Add Student',
+            ),
+            Tab(
+              icon: Icon(Icons.people_rounded),
+              text: 'All Students',
+            ),
+          ],
+        ),
+      ),
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+              ),
+            )
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildDynamicForm(),
+                _buildStudentsList(),
+              ],
+            ),
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF6366F1),
+              Color(0xFF8B5CF6),
             ],
           ),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6366F1).withOpacity(0.4),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                children: [
-                  _buildDynamicForm(),
-                  _buildStudentsList(),
-                ],
-              ),
-        floatingActionButton: FloatingActionButton.extended(
+        child: FloatingActionButton.extended(
           onPressed: _openAIFormBuilder,
-          icon: const Icon(Icons.auto_awesome),
-          label: const Text('AI Fields'),
-          backgroundColor: Colors.purple,
+          icon: const Icon(Icons.auto_awesome, color: Colors.white),
+          label: const Text(
+            'AI Form Builder',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         ),
       ),
     );
   }
 }
+

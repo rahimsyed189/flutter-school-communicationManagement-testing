@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,10 +22,25 @@ class _LoginPageState extends State<LoginPage> {
   bool _wantsNotifications = true;
   bool _remember = true;
 
+  // Background image settings
+  String? _backgroundImageUrl;
+  Color _gradientColor1 = Colors.blue.shade100;
+  Color _gradientColor2 = Colors.purple.shade100;
+  BoxFit _imageFit = BoxFit.cover;
+  double _imageOpacity = 0.20;
+  String _applyToPage = 'all'; // Check if background should be shown on this page
+
   @override
   void initState() {
     super.initState();
     _applyPrefill();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadApplyToPage();
+      _loadImageFit();
+      _loadImageOpacity();
+      _loadBackgroundImageUrl();
+      _loadBackgroundGradient();
+    });
   }
 
   Future<void> _applyPrefill() async {
@@ -54,6 +71,104 @@ class _LoginPageState extends State<LoginPage> {
         final v = prefs.getString('remember_password');
         if (v != null && v.isNotEmpty) _passwordController.text = v;
       }
+    }
+  }
+
+  Future<void> _loadApplyToPage() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_apply_to')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _applyToPage = doc.data()?['page'] ?? 'all';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load apply to page setting: $e');
+    }
+  }
+
+  Future<void> _loadBackgroundImageUrl() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _backgroundImageUrl = doc.data()?['url'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load background image URL: $e');
+    }
+  }
+
+  Future<void> _loadBackgroundGradient() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_gradient')
+          .get();
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        setState(() {
+          _gradientColor1 = Color(int.parse(data?['color1'] ?? 'FF90CAF9', radix: 16));
+          _gradientColor2 = Color(int.parse(data?['color2'] ?? 'FFCE93D8', radix: 16));
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load background gradient: $e');
+    }
+  }
+
+  Future<void> _loadImageFit() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_fit')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _imageFit = _stringToBoxFit(doc.data()?['fit'] ?? 'cover');
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load image fit: $e');
+    }
+  }
+
+  Future<void> _loadImageOpacity() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_opacity')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _imageOpacity = doc.data()?['opacity'] ?? 0.20;
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load image opacity: $e');
+    }
+  }
+
+  BoxFit _stringToBoxFit(String fitString) {
+    switch (fitString) {
+      case 'contain':
+        return BoxFit.contain;
+      case 'fill':
+        return BoxFit.fill;
+      case 'fitWidth':
+        return BoxFit.fitWidth;
+      case 'fitHeight':
+        return BoxFit.fitHeight;
+      case 'cover':
+      default:
+        return BoxFit.cover;
     }
   }
 
@@ -191,49 +306,112 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if background should be shown on this page
+    final showBackground = _applyToPage == 'all' || _applyToPage == 'login';
+    
     return Scaffold(
       appBar: AppBar(title: const Text('Login')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _userIdController,
-              decoration: const InputDecoration(labelText: 'User ID'),
+      body: Stack(
+        children: [
+          // Full Page Background Image
+          if (showBackground && _backgroundImageUrl != null)
+            Positioned.fill(
+              child: Opacity(
+                opacity: _imageOpacity,
+                child: _backgroundImageUrl!.startsWith('http')
+                    ? CachedNetworkImage(
+                        imageUrl: _backgroundImageUrl!,
+                        fit: _imageFit,
+                        memCacheWidth: 1080,
+                        placeholder: (context, url) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : Image.file(
+                        File(_backgroundImageUrl!),
+                        fit: _imageFit,
+                        filterQuality: FilterQuality.low,
+                        gaplessPlayback: true,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            Row(
+          // Content
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Checkbox(
-                  value: _wantsNotifications,
-                  onChanged: (v) => setState(() => _wantsNotifications = v ?? true),
+                TextField(
+                  controller: _userIdController,
+                  decoration: const InputDecoration(labelText: 'User ID'),
                 ),
-                const Expanded(child: Text('Enable notifications for announcements')),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _passwordController,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _wantsNotifications,
+                      onChanged: (v) => setState(() => _wantsNotifications = v ?? true),
+                    ),
+                    const Expanded(child: Text('Enable notifications for announcements')),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _remember,
+                      onChanged: (v) => setState(() => _remember = v ?? true),
+                    ),
+                    const Expanded(child: Text('Remember ID and Password on this device')),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _login,
+                  child: _isLoading ? const CircularProgressIndicator() : const Text('Login'),
+                ),
               ],
             ),
-            Row(
-              children: [
-                Checkbox(
-                  value: _remember,
-                  onChanged: (v) => setState(() => _remember = v ?? true),
-                ),
-                const Expanded(child: Text('Remember ID and Password on this device')),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _login,
-              child: _isLoading ? const CircularProgressIndicator() : const Text('Login'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

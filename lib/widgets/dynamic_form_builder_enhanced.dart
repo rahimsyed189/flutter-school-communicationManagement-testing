@@ -64,20 +64,24 @@ class DynamicFormBuilderEnhanced {
 
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [colors[0].withOpacity(0.1), colors[1].withOpacity(0.05)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors[0].withOpacity(0.3), width: 1.5),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            spreadRadius: 0,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Group Header
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: colors,
@@ -85,28 +89,29 @@ class DynamicFormBuilderEnhanced {
                 end: Alignment.bottomRight,
               ),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(15),
-                topRight: Radius.circular(15),
+                topLeft: Radius.circular(19),
+                topRight: Radius.circular(19),
               ),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white.withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(iconData, color: Colors.white, size: 20),
+                  child: Icon(iconData, color: Colors.white, size: 24),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Text(
                     groupName,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ),
@@ -116,14 +121,14 @@ class DynamicFormBuilderEnhanced {
           
           // Fields
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: fields.map((field) {
                 final name = field['name'] as String;
                 final controller = controllers[name] ?? TextEditingController();
                 
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.only(bottom: 20),
                   child: _buildStyledField(
                     fieldConfig: field,
                     controller: controller,
@@ -153,21 +158,42 @@ class DynamicFormBuilderEnhanced {
     final decoration = InputDecoration(
       labelText: label + (required ? ' *' : ''),
       hintText: placeholder,
+      labelStyle: TextStyle(
+        color: Colors.grey.shade700,
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+      hintStyle: TextStyle(
+        color: Colors.grey.shade400,
+        fontSize: 15,
+      ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: accentColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: accentColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: accentColor, width: 2),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: accentColor, width: 2.5),
       ),
-      prefixIcon: Icon(_getIconForType(type), color: accentColor),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.red.shade400, width: 2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.red.shade600, width: 2.5),
+      ),
+      prefixIcon: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Icon(_getIconForType(type), color: accentColor, size: 24),
+      ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
     );
 
     switch (type) {
@@ -178,6 +204,11 @@ class DynamicFormBuilderEnhanced {
         return TextFormField(
           controller: controller,
           decoration: decoration,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+          ),
           keyboardType: _getKeyboardType(type),
           validator: required ? (val) => val?.isEmpty == true ? '$label is required' : null : null,
         );
@@ -185,8 +216,17 @@ class DynamicFormBuilderEnhanced {
       case 'textarea':
         return TextFormField(
           controller: controller,
-          decoration: decoration.copyWith(alignLabelWithHint: true),
-          maxLines: 4,
+          decoration: decoration.copyWith(
+            alignLabelWithHint: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          ),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+            height: 1.5,
+          ),
+          maxLines: 5,
           validator: required ? (val) => val?.isEmpty == true ? '$label is required' : null : null,
         );
 
@@ -206,6 +246,13 @@ class DynamicFormBuilderEnhanced {
         return DropdownButtonFormField<String>(
           value: controller.text.isEmpty ? null : controller.text,
           decoration: decoration,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(Icons.arrow_drop_down_rounded, color: accentColor, size: 32),
           items: options.map((opt) {
             return DropdownMenuItem<String>(
               value: opt.toString(),
@@ -219,15 +266,30 @@ class DynamicFormBuilderEnhanced {
         );
 
       case 'checkbox':
-        return CheckboxListTile(
-          title: Text(label + (required ? ' *' : '')),
-          value: controller.text == 'true',
-          onChanged: (value) {
-            controller.text = value.toString();
-          },
-          activeColor: accentColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          tileColor: Colors.white,
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade300, width: 2),
+          ),
+          child: CheckboxListTile(
+            title: Text(
+              label + (required ? ' *' : ''),
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            value: controller.text == 'true',
+            onChanged: (value) {
+              controller.text = value.toString();
+            },
+            activeColor: accentColor,
+            checkColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
         );
 
       default:
@@ -248,7 +310,15 @@ class DynamicFormBuilderEnhanced {
         return TextFormField(
           controller: controller,
           decoration: decoration.copyWith(
-            suffixIcon: Icon(Icons.calendar_today, color: accentColor),
+            suffixIcon: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Icon(Icons.calendar_today_rounded, color: accentColor, size: 22),
+            ),
+          ),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
           ),
           readOnly: true,
           onTap: () async {
@@ -260,7 +330,12 @@ class DynamicFormBuilderEnhanced {
               builder: (context, child) {
                 return Theme(
                   data: Theme.of(context).copyWith(
-                    colorScheme: ColorScheme.light(primary: accentColor),
+                    colorScheme: ColorScheme.light(
+                      primary: accentColor,
+                      onPrimary: Colors.white,
+                      surface: Colors.white,
+                    ),
+                    dialogBackgroundColor: Colors.white,
                   ),
                   child: child!,
                 );

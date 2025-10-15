@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'firebase_options.dart';
+import 'services/dynamic_firebase_options.dart';
 import 'announcements_page.dart';
 import 'admin_home_page.dart';
 import 'admin_add_user_page.dart';
@@ -35,16 +36,20 @@ import 'multi_r2_media_uploader_page.dart';
 import 'students_page.dart';
 import 'staff_page.dart';
 import 'services/route_persistence_service.dart';
+import 'school_key_entry_page.dart';
+import 'school_registration_page.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Background handler uses dynamic Firebase options
+  await Firebase.initializeApp(options: await DynamicFirebaseOptions.getOptions());
 }
 
 @pragma('vm:entry-point')
 void backgroundTaskDispatcher() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Background task uses dynamic Firebase options
+  await Firebase.initializeApp(options: await DynamicFirebaseOptions.getOptions());
   Workmanager().executeTask((task, inputData) async {
     try {
       // inputData may contain preset and targets
@@ -237,8 +242,11 @@ void backgroundTaskDispatcher() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase with dynamic configuration
+  // This will check Firestore for custom config, or use defaults from firebase_options.dart
   await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
+    options: await DynamicFirebaseOptions.getOptions(),
   );
   
   // Optional: configure background downloader (no notifications here)
@@ -285,9 +293,12 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'School Communication',
-  navigatorKey: rootNavigatorKey,
-      initialRoute: '/login',
+      navigatorKey: rootNavigatorKey,
+      initialRoute: '/schoolKeyCheck',
       onGenerateRoute: (settings) {
+        if (settings.name == '/schoolKeyCheck') {
+          return MaterialPageRoute(builder: (_) => const SchoolKeyCheckScreen());
+        }
         if (settings.name == '/login') {
           return MaterialPageRoute(builder: (_) => const _SessionGate());
         }
@@ -674,5 +685,97 @@ Future<void> _performDesktopCleanup(String preset, bool includeChats, bool inclu
     }
   } catch (e) {
     print("Desktop cleanup error: $e");
+  }
+}
+
+// School Key Check Screen - Shows on first launch
+class SchoolKeyCheckScreen extends StatefulWidget {
+  const SchoolKeyCheckScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SchoolKeyCheckScreen> createState() => _SchoolKeyCheckScreenState();
+}
+
+class _SchoolKeyCheckScreenState extends State<SchoolKeyCheckScreen> {
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSchoolKey();
+  }
+
+  Future<void> _checkSchoolKey() async {
+    try {
+      final hasKey = await DynamicFirebaseOptions.hasSchoolKey();
+      
+      if (hasKey) {
+        // Key exists, proceed to login
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      } else {
+        // No key, show key entry page
+        if (mounted) {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const SchoolKeyEntryPage(),
+              fullscreenDialog: true,
+            ),
+          );
+          
+          if (result == true) {
+            // Key configured successfully, proceed to login
+            if (mounted) {
+              Navigator.pushReplacementNamed(context, '/login');
+            }
+          } else {
+            // User cancelled, show again
+            setState(() => _isChecking = true);
+            _checkSchoolKey();
+          }
+        }
+      }
+    } catch (e) {
+      // On error, proceed to login anyway (fallback)
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.blue.shade400,
+              Colors.blue.shade700,
+            ],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 24),
+              Text(
+                'Initializing...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

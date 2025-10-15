@@ -1,15 +1,19 @@
 {
   "name": "school-functions",
   "private": true,
-  "engines": { "node": "18" },
+  "engines": {
+    "node": "18"
+  },
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
+    "aws-sdk": "^2.1691.0",
+    "cors": "^2.8.5",
     "firebase-admin": "^12.6.0",
     "firebase-functions": "^5.0.1",
-    "aws-sdk": "^2.1691.0"
+    "googleapis": "^140.0.1"
   }
 }

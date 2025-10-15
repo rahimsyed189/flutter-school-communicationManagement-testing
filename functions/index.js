@@ -5,6 +5,22 @@ const AWS = require('aws-sdk');
 try { admin.initializeApp(); } catch (e) {}
 const db = admin.firestore();
 
+// Import the createFirebaseProject function
+const { createFirebaseProject } = require('./createFirebaseProject');
+exports.createFirebaseProject = createFirebaseProject;
+
+// Import the verifyAndFetchFirebaseConfig function
+const { verifyAndFetchFirebaseConfig } = require('./verifyAndFetchFirebaseConfig');
+exports.verifyAndFetchFirebaseConfig = verifyAndFetchFirebaseConfig;
+
+// Import the listUserFirebaseProjects function (exports itself directly)
+const listUserProjectsModule = require('./listUserFirebaseProjects');
+exports.listUserFirebaseProjects = listUserProjectsModule.listUserFirebaseProjects;
+
+// Import the autoConfigureFirebaseProject function (exports itself directly)
+const autoConfigureModule = require('./autoConfigureFirebaseProject');
+exports.autoConfigureFirebaseProject = autoConfigureModule.autoConfigureFirebaseProject;
+
 // Server-side cleanup function for chats, announcements, and R2 storage
 // Fixed to run daily at 2AM UTC - no custom scheduling to reduce function triggers
 exports.dailyCleanup = functions.pubsub.schedule('0 2 * * *').timeZone('UTC').onRun(async (context) => {

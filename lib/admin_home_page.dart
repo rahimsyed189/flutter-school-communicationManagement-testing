@@ -12,12 +12,14 @@ import 'youtube_uploader_page.dart';
 import 'video_upload_settings_page.dart';
 import 'r2_config_page.dart';
 import 'gemini_config_page.dart';
+import 'firebase_config_page.dart';
 import 'dynamic_students_page.dart';
 import 'simple_cleanup_notification.dart';
 import 'admin_cleanup_page.dart';
 import 'server_cleanup_page.dart';
 import 'school_notifications_template.dart';
 import 'admin_background_image_page.dart';
+import 'school_registration_page.dart';
 
 // Global singleton to cache background image across page navigations
 class BackgroundImageCache {
@@ -55,6 +57,15 @@ class _AdminHomePageState extends State<AdminHomePage> {
   // Gradient colors for fallback background
   Color _gradientColor1 = Colors.white;
   Color _gradientColor2 = Colors.white;
+  
+  // Image fit option
+  BoxFit _imageFit = BoxFit.cover;
+  
+  // Image opacity
+  double _imageOpacity = 0.20;
+  
+  // Page selection
+  String _applyToPage = 'all';
 
   @override
   void initState() {
@@ -77,6 +88,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
       
       // Otherwise, load from disk/R2 in background (won't block UI)
       _checkAndLoadBackgroundImage();
+      _loadApplyToPage(); // Load page selection setting
+      _loadImageFit(); // Load image fit setting
+      _loadImageOpacity(); // Load image opacity setting
     });
   }
   
@@ -97,6 +111,75 @@ class _AdminHomePageState extends State<AdminHomePage> {
       }
     } catch (e) {
       debugPrint('Failed to load gradient colors: $e');
+    }
+  }
+
+  Future<void> _loadApplyToPage() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_apply_to')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _applyToPage = doc.data()?['page'] ?? 'all';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load apply to page setting: $e');
+    }
+  }
+
+  Future<void> _loadImageFit() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_fit')
+          .get();
+      if (doc.exists) {
+        final fitString = doc.data()?['fit'] ?? 'cover';
+        if (mounted) {
+          setState(() {
+            _imageFit = _stringToBoxFit(fitString);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load image fit: $e');
+    }
+  }
+  
+  BoxFit _stringToBoxFit(String fitString) {
+    switch (fitString) {
+      case 'contain':
+        return BoxFit.contain;
+      case 'fill':
+        return BoxFit.fill;
+      case 'fitWidth':
+        return BoxFit.fitWidth;
+      case 'fitHeight':
+        return BoxFit.fitHeight;
+      case 'cover':
+      default:
+        return BoxFit.cover;
+    }
+  }
+  
+  Future<void> _loadImageOpacity() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_opacity')
+          .get();
+      if (doc.exists) {
+        if (mounted) {
+          setState(() {
+            _imageOpacity = doc.data()?['opacity'] ?? 0.20;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load image opacity: $e');
     }
   }
 
@@ -321,61 +404,66 @@ class _AdminHomePageState extends State<AdminHomePage> {
         ),
       );
     }
+    // Check if background should be shown on this page
+    final showBackground = _applyToPage == 'all' || _applyToPage == 'admin_home';
 
     return Scaffold(
       body: Stack(
         children: [
           // Full Page Background Image
-          if (_backgroundImageUrl != null)
+          if (showBackground && _backgroundImageUrl != null)
             Positioned.fill(
-              child: _backgroundImageUrl!.startsWith('http')
-                  ? CachedNetworkImage(
-                      imageUrl: _backgroundImageUrl!,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 1080, // Reduce memory usage
-                      placeholder: (context, url) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              _gradientColor1,
-                              _gradientColor2,
-                            ],
+              child: Opacity(
+                opacity: _imageOpacity, // Use saved opacity setting
+                child: _backgroundImageUrl!.startsWith('http')
+                    ? CachedNetworkImage(
+                        imageUrl: _backgroundImageUrl!,
+                        fit: _imageFit,
+                        memCacheWidth: 1080, // Reduce memory usage
+                        placeholder: (context, url) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : Image(
+                        image: _cachedImageProvider ?? FileImage(File(_backgroundImageUrl!)),
+                        fit: _imageFit,
+                        filterQuality: FilterQuality.low, // Faster rendering
+                        gaplessPlayback: true, // Smooth transitions
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _gradientColor1,
+                                _gradientColor2,
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                      errorWidget: (context, url, error) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              _gradientColor1,
-                              _gradientColor2,
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                  : Image(
-                      image: _cachedImageProvider ?? FileImage(File(_backgroundImageUrl!)),
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.low, // Faster rendering
-                      gaplessPlayback: true, // Smooth transitions
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              _gradientColor1,
-                              _gradientColor2,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+              ),
             ),
           // Gradient background if no image
           if (_backgroundImageUrl == null)
@@ -630,6 +718,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               Navigator.pop(ctx);
                               Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => const GeminiConfigPage()),
+                              );
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.local_fire_department, color: Colors.orange),
+                            title: const Text('Firebase Config'),
+                            subtitle: const Text('Configure Firebase API keys for all platforms'),
+                            trailing: const Icon(Icons.settings_suggest, color: Colors.orange, size: 16),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const FirebaseConfigPage()),
                               );
                             },
                           ),
@@ -1033,9 +1133,16 @@ class _AdminHomePageState extends State<AdminHomePage> {
           border: Border.all(color: accentColor.withOpacity(0.22), width: 1.2),
           boxShadow: [
             BoxShadow(
-              color: accentColor.withOpacity(0.16),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+              color: Colors.black.withOpacity(0.25),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 4,
+              spreadRadius: 0,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -1325,9 +1432,16 @@ extension AdminHomePageExtension on _AdminHomePageState {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: accentColor.withOpacity(0.16),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+              color: Colors.black.withOpacity(0.25),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 4,
+              spreadRadius: 0,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -1411,6 +1525,16 @@ class AdminSettingsPage extends StatelessWidget {
               title: Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             const Divider(height: 0),
+            ListTile(
+              leading: const Icon(Icons.app_registration, color: Colors.orange),
+              title: const Text('Register School'),
+              subtitle: const Text('Create new school Firebase key'),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SchoolRegistrationPage()),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.group_add),
               title: const Text('Create Group'),

@@ -33,6 +33,15 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   // Gradient colors for fallback background
   Color _gradientColor1 = Colors.white;
   Color _gradientColor2 = Colors.white;
+  
+  // Image alignment/fit option
+  String _imageFit = 'cover'; // cover, contain, fill, fitWidth, fitHeight
+  
+  // Image opacity
+  double _imageOpacity = 0.20;
+  
+  // Page selection for background application
+  String _applyToPage = 'all'; // all, login, admin_home
 
   @override
   void initState() {
@@ -40,6 +49,9 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
     _loadR2Configuration();
     _loadCurrentBackground();
     _loadGradientColors();
+    _loadImageFit();
+    _loadImageOpacity();
+    _loadApplyToPage();
   }
   
   Future<void> _loadGradientColors() async {
@@ -78,6 +90,125 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
       }
     } catch (e) {
       debugPrint('Failed to save gradient colors: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    }
+  }
+  
+  Future<void> _loadImageFit() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_fit')
+          .get();
+      if (doc.exists) {
+        setState(() {
+          _imageFit = doc.data()?['fit'] ?? 'cover';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load image fit: $e');
+    }
+  }
+  
+  Future<void> _saveImageFit() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_fit')
+          .set({
+        'fit': _imageFit,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✓ Image alignment saved')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save image fit: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    }
+  }
+  
+  Future<void> _loadImageOpacity() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_opacity')
+          .get();
+      if (doc.exists) {
+        setState(() {
+          _imageOpacity = doc.data()?['opacity'] ?? 0.20;
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load image opacity: $e');
+    }
+  }
+  
+  Future<void> _saveImageOpacity() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_image_opacity')
+          .set({
+        'opacity': _imageOpacity,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✓ Image opacity saved')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save image opacity: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadApplyToPage() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_apply_to')
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _applyToPage = doc.data()?['page'] ?? 'all';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load apply to page setting: $e');
+    }
+  }
+
+  Future<void> _saveApplyToPage() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('background_apply_to')
+          .set({'page': _applyToPage});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✓ Page selection saved')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save apply to page: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to save: $e')),
@@ -648,10 +779,423 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
                 ),
               ),
             ),
+            const SizedBox(height: 24),
+            
+            // Image Alignment / Fit Options
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Image Alignment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Choose how the background image should fit',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Image Fit Dropdown
+                    DropdownButtonFormField<String>(
+                      value: _imageFit,
+                      decoration: InputDecoration(
+                        labelText: 'Image Fit',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.aspect_ratio),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'cover',
+                          child: Row(
+                            children: [
+                              Icon(Icons.crop_free, size: 20),
+                              SizedBox(width: 8),
+                              Text('Cover (Zoom to Fill)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'contain',
+                          child: Row(
+                            children: [
+                              Icon(Icons.fit_screen, size: 20),
+                              SizedBox(width: 8),
+                              Text('Contain (Fit Inside)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'fill',
+                          child: Row(
+                            children: [
+                              Icon(Icons.fullscreen, size: 20),
+                              SizedBox(width: 8),
+                              Text('Fill (Stretch)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'fitWidth',
+                          child: Row(
+                            children: [
+                              Icon(Icons.expand, size: 20),
+                              SizedBox(width: 8),
+                              Text('Fit Width'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'fitHeight',
+                          child: Row(
+                            children: [
+                              Icon(Icons.unfold_more, size: 20),
+                              SizedBox(width: 8),
+                              Text('Fit Height'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _imageFit = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Description for selected fit
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _getImageFitDescription(),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Save Button
+                    ElevatedButton.icon(
+                      onPressed: _saveImageFit,
+                      icon: const Icon(Icons.save),
+                      label: const Text('Save Image Alignment'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Apply To Pages Selection
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Apply Background To',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Choose which pages should display the background image',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _applyToPage,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Pages',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.pages, color: Colors.blue),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Row(
+                            children: [
+                              Icon(Icons.select_all, size: 20),
+                              SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('All Pages'),
+                                  Text(
+                                    'Login, Admin Home & Other Pages',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'login',
+                          child: Row(
+                            children: [
+                              Icon(Icons.login, size: 20),
+                              SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Login Page Only'),
+                                  Text(
+                                    'First page users see',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'admin_home',
+                          child: Row(
+                            children: [
+                              Icon(Icons.home, size: 20),
+                              SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Admin Home Only'),
+                                  Text(
+                                    'Main admin dashboard',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _applyToPage = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _saveApplyToPage,
+                        icon: const Icon(Icons.save),
+                        label: const Text('Save Page Selection'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Image Opacity Control
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Image Opacity',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Control background image transparency (lower = more transparent)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Opacity Slider
+                    Row(
+                      children: [
+                        const Icon(Icons.opacity, color: Colors.blue),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Transparency Level',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(_imageOpacity * 100).toInt()}%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: _imageOpacity,
+                                min: 0.05,
+                                max: 1.0,
+                                divisions: 19,
+                                label: '${(_imageOpacity * 100).toInt()}%',
+                                onChanged: (value) {
+                                  setState(() => _imageOpacity = value);
+                                },
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'More Transparent',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  Text(
+                                    'Less Transparent',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Quick Preset Buttons
+                    const Text(
+                      'Quick Presets',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setState(() => _imageOpacity = 0.10),
+                            child: const Text('10%'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setState(() => _imageOpacity = 0.20),
+                            child: const Text('20%'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setState(() => _imageOpacity = 0.50),
+                            child: const Text('50%'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setState(() => _imageOpacity = 1.0),
+                            child: const Text('100%'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Save Button
+                    ElevatedButton.icon(
+                      onPressed: _saveImageOpacity,
+                      icon: const Icon(Icons.save),
+                      label: const Text('Save Image Opacity'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+  
+  String _getImageFitDescription() {
+    switch (_imageFit) {
+      case 'cover':
+        return 'Zooms image to fill entire screen, may crop edges';
+      case 'contain':
+        return 'Shows entire image, may have empty space on sides';
+      case 'fill':
+        return 'Stretches image to fill screen, may distort';
+      case 'fitWidth':
+        return 'Fits image width, may crop top/bottom';
+      case 'fitHeight':
+        return 'Fits image height, may crop left/right';
+      default:
+        return '';
+    }
   }
   
   void _showColorPicker(bool isFirstColor) {
