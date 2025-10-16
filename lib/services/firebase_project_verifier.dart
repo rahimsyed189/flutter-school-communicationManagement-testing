@@ -231,6 +231,46 @@ class FirebaseProjectVerifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         debugPrint('✅ Project verified and config fetched successfully');
+        
+        // Log what we received
+        debugPrint('📦 Full response data: $data');
+        debugPrint('🔍 Checking config data...');
+        
+        if (data['config'] != null) {
+          debugPrint('✅ CONFIG FOUND in response!');
+          final config = data['config'];
+          
+          if (config['web'] != null) {
+            debugPrint('  ✅ WEB CONFIG FOUND:');
+            debugPrint('     - apiKey: ${config['web']['apiKey']?.toString().substring(0, 10)}...');
+            debugPrint('     - appId: ${config['web']['appId']}');
+            debugPrint('     - projectId: ${config['web']['projectId']}');
+          } else {
+            debugPrint('  ⚠️ NO WEB CONFIG - Web app not created in Firebase Console');
+          }
+          
+          if (config['android'] != null) {
+            debugPrint('  ✅ ANDROID CONFIG FOUND:');
+            debugPrint('     - mobilesdk_app_id: ${config['android']['mobilesdk_app_id']}');
+            debugPrint('     - current_key: ${config['android']['current_key']?.toString().substring(0, 10)}...');
+            debugPrint('     - project_id: ${config['android']['project_id']}');
+          } else {
+            debugPrint('  ⚠️ NO ANDROID CONFIG - Android app not created in Firebase Console');
+          }
+          
+          if (config['ios'] != null) {
+            debugPrint('  ✅ IOS CONFIG FOUND:');
+            debugPrint('     - mobilesdk_app_id: ${config['ios']['mobilesdk_app_id']}');
+            debugPrint('     - api_key: ${config['ios']['api_key']?.toString().substring(0, 10)}...');
+            debugPrint('     - project_id: ${config['ios']['project_id']}');
+          } else {
+            debugPrint('  ⚠️ NO IOS CONFIG - iOS app not created in Firebase Console');
+          }
+        } else {
+          debugPrint('❌ NO CONFIG DATA IN RESPONSE!');
+          debugPrint('   This means no apps (Web/Android/iOS) have been created in Firebase Console yet.');
+        }
+        
         return data;
       } else {
         final error = jsonDecode(response.body);
@@ -239,6 +279,88 @@ class FirebaseProjectVerifier {
       }
     } catch (e) {
       debugPrint('❌ Error verifying project: $e');
+      return null;
+    }
+  }
+
+  /// AUTO-CREATE APPS + FETCH CONFIG
+  /// Creates Web/Android/iOS apps automatically if they don't exist,
+  /// then fetches all API keys in one call
+  static Future<Map<String, dynamic>?> autoCreateAppsAndFetchConfig({
+    required String projectId,
+    required String accessToken,
+    String? androidPackageName,
+    String? iosBundleId,
+  }) async {
+    try {
+      debugPrint('🚀 AUTO-CREATING apps and fetching config for: $projectId');
+
+      const cloudFunctionUrl = 
+          'https://us-central1-adilabadautocabs.cloudfunctions.net/autoCreateAppsAndFetchConfig';
+
+      debugPrint('📍 Calling Cloud Function: $cloudFunctionUrl');
+
+      final response = await http.post(
+        Uri.parse(cloudFunctionUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'accessToken': accessToken,
+          'projectId': projectId,
+          'appPackageName': androidPackageName ?? 'com.school.management',
+          'iosBundleId': iosBundleId ?? 'com.school.management',
+        }),
+      );
+
+      debugPrint('📡 Response status: ${response.statusCode}');
+      debugPrint('📡 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        debugPrint('✅ Auto-create completed successfully!');
+        
+        // Log what was created
+        debugPrint('📦 Full response data: $data');
+        debugPrint('🔍 Apps created status:');
+        
+        if (data['appsCreated'] != null) {
+          final appsCreated = data['appsCreated'];
+          debugPrint('  📱 Web: ${appsCreated['web'] == true ? "✅ Created/Exists" : "❌ Failed"}');
+          debugPrint('  🤖 Android: ${appsCreated['android'] == true ? "✅ Created/Exists" : "❌ Failed"}');
+          debugPrint('  🍎 iOS: ${appsCreated['ios'] == true ? "✅ Created/Exists" : "❌ Failed"}');
+        }
+        
+        if (data['config'] != null) {
+          debugPrint('✅ CONFIG FETCHED!');
+          final config = data['config'];
+          
+          if (config['web'] != null) {
+            final webApiKey = config['web']['apiKey']?.toString() ?? '';
+            debugPrint('  ✅ WEB CONFIG: ${webApiKey.length > 10 ? webApiKey.substring(0, 10) + "..." : webApiKey.isEmpty ? "EMPTY" : webApiKey}');
+          }
+          
+          if (config['android'] != null) {
+            final androidApiKey = config['android']['current_key']?.toString() ?? '';
+            debugPrint('  ✅ ANDROID CONFIG: ${androidApiKey.length > 10 ? androidApiKey.substring(0, 10) + "..." : androidApiKey.isEmpty ? "EMPTY" : androidApiKey}');
+          }
+          
+          if (config['ios'] != null) {
+            final iosApiKey = config['ios']['api_key']?.toString() ?? '';
+            debugPrint('  ✅ IOS CONFIG: ${iosApiKey.length > 10 ? iosApiKey.substring(0, 10) + "..." : iosApiKey.isEmpty ? "EMPTY" : iosApiKey}');
+          }
+        }
+        
+        return data;
+      } else if (response.statusCode == 400) {
+        final error = jsonDecode(response.body);
+        debugPrint('⚠️ Auto-create failed: ${error['error']}');
+        return error;
+      } else {
+        final error = jsonDecode(response.body);
+        debugPrint('❌ Auto-create failed: ${error['error']}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('❌ Error in auto-create: $e');
       return null;
     }
   }

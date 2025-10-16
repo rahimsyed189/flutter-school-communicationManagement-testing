@@ -21,6 +21,10 @@ exports.listUserFirebaseProjects = listUserProjectsModule.listUserFirebaseProjec
 const autoConfigureModule = require('./autoConfigureFirebaseProject');
 exports.autoConfigureFirebaseProject = autoConfigureModule.autoConfigureFirebaseProject;
 
+// Import the autoCreateAppsAndFetchConfig function (NEW - Auto-creates apps + fetches keys)
+const { autoCreateAppsAndFetchConfig } = require('./autoCreateAppsAndFetchConfig');
+exports.autoCreateAppsAndFetchConfig = autoCreateAppsAndFetchConfig;
+
 // Server-side cleanup function for chats, announcements, and R2 storage
 // Fixed to run daily at 2AM UTC - no custom scheduling to reduce function triggers
 exports.dailyCleanup = functions.pubsub.schedule('0 2 * * *').timeZone('UTC').onRun(async (context) => {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 import 'dart:math';
 import 'firebase_options.dart';
 import 'services/dynamic_firebase_options.dart';
@@ -39,6 +40,9 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   bool _isVerifyingProject = false;
   final _projectIdController = TextEditingController();
   Map<String, dynamic>? _billingInfo;
+  Timer? _debounceTimer; // For auto-verify debouncing
+  String? _apiKeyMessage; // Message about API key fetch status
+  bool _apiKeyMissing = false; // Track if API key needs to be enabled
   
   // Step 3: Firebase Configuration
   String _selectedPlatform = 'web';
@@ -109,6 +113,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     _adminEmailController.dispose();
     _adminPhoneController.dispose();
     _projectIdController.dispose();
+    _debounceTimer?.cancel();
     for (var platform in _firebaseControllers.values) {
       for (var controller in platform.values) {
         controller.dispose();
@@ -536,6 +541,10 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
                 _selectedProjectId = value;
                 _projectIdController.text = value ?? '';
               });
+              // Automatically verify and fetch config when project is selected
+              if (value != null && value.isNotEmpty) {
+                _verifyFirebaseProject();
+              }
             },
           ),
           const SizedBox(height: 16),
@@ -549,22 +558,33 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
             prefixIcon: Icon(Icons.vpn_key),
             border: OutlineInputBorder(),
             hintText: 'my-project-id',
+            helperText: 'Auto-verifies when you finish typing',
           ),
-          onChanged: (value) => setState(() => _selectedProjectId = value),
+          onChanged: (value) {
+            setState(() => _selectedProjectId = value);
+            // Auto-verify after user stops typing (debounce)
+            if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+            _debounceTimer = Timer(const Duration(seconds: 1), () {
+              if (value.isNotEmpty) {
+                _verifyFirebaseProject();
+              }
+            });
+          },
         ),
         const SizedBox(height: 16),
         
-        // Verify Button
-        ElevatedButton.icon(
-          onPressed: _selectedProjectId != null && _selectedProjectId!.isNotEmpty
-              ? _verifyFirebaseProject
-              : null,
-          icon: const Icon(Icons.verified),
-          label: const Text('Verify & Auto-Configure'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        // Verify Button (now only shown for manual project ID entry)
+        if (_userProjects.isEmpty)
+          ElevatedButton.icon(
+            onPressed: _selectedProjectId != null && _selectedProjectId!.isNotEmpty
+                ? _verifyFirebaseProject
+                : null,
+            icon: const Icon(Icons.verified),
+            label: const Text('Verify & Auto-Configure'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            ),
           ),
-        ),
         
         if (_isVerifyingProject)
           const Padding(
@@ -1169,7 +1189,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     }
   }
 
-  // Verify Firebase Project
+  // Verify Firebase Project (with AUTO-CREATE apps)
   Future<void> _verifyFirebaseProject() async {
     setState(() => _isVerifyingProject = true);
     
@@ -1181,12 +1201,19 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         _accessToken = token;
       }
       
-      final result = await FirebaseProjectVerifier.verifyAndFetchConfig(
+      // Use AUTO-CREATE function instead of just verify
+      print('🚀 Using AUTO-CREATE function to create apps and fetch keys...');
+      final result = await FirebaseProjectVerifier.autoCreateAppsAndFetchConfig(
         projectId: _selectedProjectId!,
         accessToken: token,
+        androidPackageName: 'com.school.management',
+        iosBundleId: 'com.school.management',
       );
       
       if (result == null) throw Exception('Failed to verify project');
+      
+      print('🔍 Full verification result: $result');
+      print('🔍 Config data: ${result['config']}');
       
       setState(() {
         _billingInfo = {
@@ -1195,12 +1222,44 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
           'billingAccountName': result['billingAccountName'] ?? '',
           'billingCheckError': result['billingCheckError'],
         };
+        _apiKeyMessage = result['apiKeyMessage'];
         _isVerifyingProject = false;
       });
       
       // Auto-fill API keys if available
       if (result['config'] != null) {
+        print('✅ Config found, calling auto-fill...');
         _autoFillAPIKeys(result['config']);
+        
+        // Check if API keys are empty after auto-fill
+        final webApiKey = _firebaseControllers['web']!['apiKey']!.text;
+        final androidApiKey = _firebaseControllers['android']!['apiKey']!.text;
+        final iosApiKey = _firebaseControllers['ios']!['apiKey']!.text;
+        
+        if (webApiKey.isEmpty || androidApiKey.isEmpty || iosApiKey.isEmpty) {
+          print('⚠️ API keys are empty. Showing API key dialog...');
+          setState(() => _apiKeyMissing = true);
+          
+          // Show dialog after a short delay to ensure UI is ready
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _showApiKeyDialog();
+            }
+          });
+        } else {
+          setState(() => _apiKeyMissing = false);
+        }
+      } else {
+        print('⚠️ No config data in response!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ No API keys found. Make sure you have created Web/Android/iOS apps in Firebase Console.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
       }
       
       if (mounted) {
@@ -1219,6 +1278,22 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   void _showBillingStatusSnackBar(Map<String, dynamic> status) {
     final billingEnabled = status['billingEnabled'] ?? false;
     final billingPlan = status['billingPlan'] ?? 'Unknown';
+    final appsCreated = status['appsCreated'];
+    
+    // Build message about created apps
+    String appsMessage = '';
+    if (appsCreated != null) {
+      final webCreated = appsCreated['web'] == true;
+      final androidCreated = appsCreated['android'] == true;
+      final iosCreated = appsCreated['ios'] == true;
+      
+      if (webCreated || androidCreated || iosCreated) {
+        appsMessage = '\n🎉 Apps created: ';
+        if (webCreated) appsMessage += 'Web ';
+        if (androidCreated) appsMessage += 'Android ';
+        if (iosCreated) appsMessage += 'iOS';
+      }
+    }
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1228,10 +1303,157 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
           children: [
             Text('Plan: $billingPlan'),
             Text('Status: ${billingEnabled ? "Active ✅" : "Free Tier - Upgrade to Blaze ⚠️"}'),
+            if (appsMessage.isNotEmpty) Text(appsMessage),
           ],
         ),
         backgroundColor: billingEnabled ? Colors.green.shade700 : Colors.orange.shade700,
         duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  /// Show dialog to enable API Keys API or manually get keys
+  void _showApiKeyDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.vpn_key, color: Colors.orange.shade700, size: 28),
+            const SizedBox(width: 12),
+            const Text('API Key Required'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '⚠️ API Keys Could Not Be Fetched',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              Text(_apiKeyMessage ?? 'The API keys need to be added manually.'),
+              const SizedBox(height: 16),
+              
+              // Option 1: Manual Entry (Recommended)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade300, width: 2),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.star, color: Colors.green.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '✅ Option 1: Manual Entry (Recommended)',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('1. Click "Get API Key" button below'),
+                    const Text('2. Copy the "Web API Key" from Firebase settings'),
+                    const Text('3. Return here and paste it in Step 3'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      label: const Text('Get API Key from Firebase'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        final url = 'https://console.firebase.google.com/project/$_selectedProjectId/settings/general';
+                        if (await canLaunchUrl(Uri.parse(url))) {
+                          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Option 2: Enable API Keys API (Advanced)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '🔧 Option 2: Enable API Keys API (Advanced)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('1. Click "Enable API Keys API" button'),
+                    const Text('2. Sign in with: '),
+                    if (_loggedInEmail != null)
+                      SelectableText(
+                        '   $_loggedInEmail',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    const Text('3. Click "ENABLE" on the page'),
+                    const Text('4. Return here and click "Refresh"'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.api, size: 18),
+                      label: const Text('Enable API Keys API'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        final url = 'https://console.cloud.google.com/apis/library/apikeys.googleapis.com?project=$_selectedProjectId';
+                        if (await canLaunchUrl(Uri.parse(url))) {
+                          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() => _apiKeyMissing = false);
+            },
+            child: const Text('Continue Without API Key'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.of(context).pop();
+              _verifyFirebaseProject(); // Re-verify to fetch API key
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1252,7 +1474,11 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     final confirmed = await _showUpgradeToBlazeDialog();
     if (confirmed != true) return;
 
-    final urlString = 'https://console.firebase.google.com/project/$_selectedProjectId/usage/details';
+    // Add authuser parameter to help browser open with correct account
+    final email = _loggedInEmail ?? '';
+    final urlString = email.isNotEmpty 
+        ? 'https://console.firebase.google.com/project/$_selectedProjectId/usage/details?authuser=$email'
+        : 'https://console.firebase.google.com/project/$_selectedProjectId/usage/details';
     final url = Uri.parse(urlString);
 
     try {
@@ -1481,7 +1707,11 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     final confirmed = await _showAccountConfirmationDialog();
     if (confirmed != true) return;
 
-    final urlString = 'https://console.developers.google.com/apis/api/cloudbilling.googleapis.com/overview?project=$_selectedProjectId';
+    // Add authuser parameter to help browser open with correct account
+    final email = _loggedInEmail ?? '';
+    final urlString = email.isNotEmpty
+        ? 'https://console.developers.google.com/apis/api/cloudbilling.googleapis.com/overview?project=$_selectedProjectId&authuser=$email'
+        : 'https://console.developers.google.com/apis/api/cloudbilling.googleapis.com/overview?project=$_selectedProjectId';
     final url = Uri.parse(urlString);
 
     try {
@@ -1873,15 +2103,184 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   }
 
   void _autoFillAPIKeys(Map<String, dynamic> config) {
-    config.forEach((platform, platformConfig) {
-      if (_firebaseControllers.containsKey(platform) && platformConfig is Map) {
-        platformConfig.forEach((key, value) {
-          if (_firebaseControllers[platform]!.containsKey(key)) {
-            _firebaseControllers[platform]![key]!.text = value?.toString() ?? '';
-          }
-        });
-      }
-    });
+    print('═══════════════════════════════════════════════════════');
+    print('🔑 AUTO-FILL API KEYS STARTED');
+    print('═══════════════════════════════════════════════════════');
+    print('📦 Config received: $config');
+    
+    int fieldsFilledCount = 0;
+    
+    // Web platform
+    if (config['web'] != null && config['web'] is Map) {
+      print('\n📱 FILLING WEB CONFIG:');
+      final webConfig = config['web'] as Map<String, dynamic>;
+      
+      final webApiKey = webConfig['apiKey']?.toString() ?? '';
+      final webAppId = webConfig['appId']?.toString() ?? '';
+      final webMessagingSenderId = webConfig['messagingSenderId']?.toString() ?? '';
+      final webProjectId = webConfig['projectId']?.toString() ?? '';
+      final webAuthDomain = webConfig['authDomain']?.toString() ?? '';
+      final webStorageBucket = webConfig['storageBucket']?.toString() ?? '';
+      final webMeasurementId = webConfig['measurementId']?.toString() ?? '';
+      
+      _firebaseControllers['web']!['apiKey']!.text = webApiKey;
+      _firebaseControllers['web']!['appId']!.text = webAppId;
+      _firebaseControllers['web']!['messagingSenderId']!.text = webMessagingSenderId;
+      _firebaseControllers['web']!['projectId']!.text = webProjectId;
+      _firebaseControllers['web']!['authDomain']!.text = webAuthDomain;
+      _firebaseControllers['web']!['storageBucket']!.text = webStorageBucket;
+      _firebaseControllers['web']!['measurementId']!.text = webMeasurementId;
+      
+      if (webApiKey.isNotEmpty) fieldsFilledCount++;
+      if (webAppId.isNotEmpty) fieldsFilledCount++;
+      if (webProjectId.isNotEmpty) fieldsFilledCount++;
+      
+      print('  ✅ apiKey: ${webApiKey.length > 10 ? webApiKey.substring(0, 10) + "..." : webApiKey.isEmpty ? "EMPTY" : webApiKey}');
+      print('  ✅ appId: $webAppId');
+      print('  ✅ messagingSenderId: $webMessagingSenderId');
+      print('  ✅ projectId: $webProjectId');
+      print('  ✅ authDomain: $webAuthDomain');
+      print('  ✅ storageBucket: $webStorageBucket');
+      print('  ✅ measurementId: $webMeasurementId');
+      print('  ✅ WEB CONFIG FILLED SUCCESSFULLY!');
+    } else {
+      print('\n⚠️ NO WEB CONFIG - Skipping web platform');
+    }
+    
+    // Android platform
+    if (config['android'] != null && config['android'] is Map) {
+      print('\n🤖 FILLING ANDROID CONFIG:');
+      final androidConfig = config['android'] as Map<String, dynamic>;
+      
+      final androidAppId = androidConfig['mobilesdk_app_id']?.toString() ?? '';
+      final androidApiKey = androidConfig['current_key']?.toString() ?? '';
+      final androidProjectId = androidConfig['project_id']?.toString() ?? '';
+      final androidStorageBucket = androidConfig['storage_bucket']?.toString() ?? '';
+      final androidMessagingSenderId = androidConfig['messaging_sender_id']?.toString() ?? androidConfig['project_number']?.toString() ?? '';
+      
+      _firebaseControllers['android']!['appId']!.text = androidAppId;
+      _firebaseControllers['android']!['apiKey']!.text = androidApiKey;
+      _firebaseControllers['android']!['projectId']!.text = androidProjectId;
+      _firebaseControllers['android']!['storageBucket']!.text = androidStorageBucket;
+      _firebaseControllers['android']!['messagingSenderId']!.text = androidMessagingSenderId;
+      
+      if (androidAppId.isNotEmpty) fieldsFilledCount++;
+      if (androidApiKey.isNotEmpty) fieldsFilledCount++;
+      if (androidProjectId.isNotEmpty) fieldsFilledCount++;
+      
+      print('  ✅ appId (mobilesdk_app_id): $androidAppId');
+      print('  ✅ apiKey (current_key): ${androidApiKey.length > 10 ? androidApiKey.substring(0, 10) + "..." : androidApiKey.isEmpty ? "EMPTY" : androidApiKey}');
+      print('  ✅ projectId (project_id): $androidProjectId');
+      print('  ✅ messagingSenderId: $androidMessagingSenderId');
+      print('  ✅ storageBucket: $androidStorageBucket');
+      print('  ✅ ANDROID CONFIG FILLED SUCCESSFULLY!');
+    } else {
+      print('\n⚠️ NO ANDROID CONFIG - Skipping android platform');
+    }
+    
+    // iOS platform
+    if (config['ios'] != null && config['ios'] is Map) {
+      print('\n🍎 FILLING IOS CONFIG:');
+      final iosConfig = config['ios'] as Map<String, dynamic>;
+      
+      final iosAppId = iosConfig['mobilesdk_app_id']?.toString() ?? '';
+      final iosApiKey = iosConfig['api_key']?.toString() ?? '';
+      final iosProjectId = iosConfig['project_id']?.toString() ?? '';
+      final iosStorageBucket = iosConfig['storage_bucket']?.toString() ?? '';
+      
+      _firebaseControllers['ios']!['appId']!.text = iosAppId;
+      _firebaseControllers['ios']!['apiKey']!.text = iosApiKey;
+      _firebaseControllers['ios']!['projectId']!.text = iosProjectId;
+      _firebaseControllers['ios']!['storageBucket']!.text = iosStorageBucket;
+      
+      if (iosAppId.isNotEmpty) fieldsFilledCount++;
+      if (iosApiKey.isNotEmpty) fieldsFilledCount++;
+      if (iosProjectId.isNotEmpty) fieldsFilledCount++;
+      
+      print('  ✅ appId (mobilesdk_app_id): $iosAppId');
+      print('  ✅ apiKey (api_key): ${iosApiKey.length > 10 ? iosApiKey.substring(0, 10) + "..." : iosApiKey.isEmpty ? "EMPTY" : iosApiKey}');
+      print('  ✅ projectId (project_id): $iosProjectId');
+      print('  ✅ storageBucket: $iosStorageBucket');
+      print('  ✅ IOS CONFIG FILLED SUCCESSFULLY!');
+    } else {
+      print('\n⚠️ NO IOS CONFIG - Skipping ios platform');
+    }
+
+    // 🍎 Fill macOS config
+    if (config['macos'] != null) {
+      print('\n🍎 FILLING MACOS CONFIG:');
+      final macosApiKey = config['macos']['api_key']?.toString() ?? '';
+      final macosAppId = config['macos']['mobilesdk_app_id']?.toString() ?? '';
+      final macosProjectId = config['macos']['project_id']?.toString() ?? '';
+      final macosStorageBucket = config['macos']['storage_bucket']?.toString() ?? '';
+      
+      _firebaseControllers['macos']!['apiKey']!.text = macosApiKey;
+      _firebaseControllers['macos']!['appId']!.text = macosAppId;
+      _firebaseControllers['macos']!['projectId']!.text = macosProjectId;
+      _firebaseControllers['macos']!['storageBucket']!.text = macosStorageBucket;
+      
+      if (macosAppId.isNotEmpty) fieldsFilledCount++;
+      if (macosApiKey.isNotEmpty) fieldsFilledCount++;
+      if (macosProjectId.isNotEmpty) fieldsFilledCount++;
+      
+      print('  ✅ appId (mobilesdk_app_id): $macosAppId');
+      print('  ✅ apiKey (api_key): ${macosApiKey.length > 10 ? macosApiKey.substring(0, 10) + "..." : macosApiKey.isEmpty ? "EMPTY" : macosApiKey}');
+      print('  ✅ projectId (project_id): $macosProjectId');
+      print('  ✅ storageBucket: $macosStorageBucket');
+      print('  ✅ MACOS CONFIG FILLED SUCCESSFULLY!');
+    } else {
+      print('\n⚠️ NO MACOS CONFIG - Skipping macos platform');
+    }
+
+    // 🪟 Fill Windows config
+    if (config['windows'] != null) {
+      print('\n🪟 FILLING WINDOWS CONFIG:');
+      final windowsApiKey = config['windows']['apiKey']?.toString() ?? '';
+      final windowsAppId = config['windows']['appId']?.toString() ?? '';
+      final windowsProjectId = config['windows']['projectId']?.toString() ?? '';
+      final windowsStorageBucket = config['windows']['storageBucket']?.toString() ?? '';
+      final windowsMessagingSenderId = config['windows']['messagingSenderId']?.toString() ?? '';
+      final windowsAuthDomain = config['windows']['authDomain']?.toString() ?? '';
+      
+      _firebaseControllers['windows']!['apiKey']!.text = windowsApiKey;
+      _firebaseControllers['windows']!['appId']!.text = windowsAppId;
+      _firebaseControllers['windows']!['messagingSenderId']!.text = windowsMessagingSenderId;
+      _firebaseControllers['windows']!['projectId']!.text = windowsProjectId;
+      _firebaseControllers['windows']!['authDomain']!.text = windowsAuthDomain;
+      _firebaseControllers['windows']!['storageBucket']!.text = windowsStorageBucket;
+      
+      if (windowsApiKey.isNotEmpty) fieldsFilledCount++;
+      if (windowsAppId.isNotEmpty) fieldsFilledCount++;
+      if (windowsProjectId.isNotEmpty) fieldsFilledCount++;
+      
+      print('  ✅ apiKey: ${windowsApiKey.length > 10 ? windowsApiKey.substring(0, 10) + "..." : windowsApiKey.isEmpty ? "EMPTY" : windowsApiKey}');
+      print('  ✅ appId: $windowsAppId');
+      print('  ✅ messagingSenderId: $windowsMessagingSenderId');
+      print('  ✅ projectId: $windowsProjectId');
+      print('  ✅ authDomain: $windowsAuthDomain');
+      print('  ✅ storageBucket: $windowsStorageBucket');
+      print('  ✅ WINDOWS CONFIG FILLED SUCCESSFULLY!');
+    } else {
+      print('\n⚠️ NO WINDOWS CONFIG - Skipping windows platform');
+    }
+    
+    print('\n═══════════════════════════════════════════════════════');
+    print('✅ AUTO-FILL COMPLETED!');
+    print('📊 Total fields filled: $fieldsFilledCount');
+    print('═══════════════════════════════════════════════════════\n');
+    
+    // Force UI update
+    setState(() {});
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ API keys auto-filled! ($fieldsFilledCount fields)'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   // Complete Registration
