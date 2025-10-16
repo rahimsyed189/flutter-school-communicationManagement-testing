@@ -47,6 +47,17 @@ class FirebaseProjectVerifier {
     }
   }
 
+  /// Get the currently signed-in user's email
+  static Future<String?> getCurrentUserEmail() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      return account?.email;
+    } catch (e) {
+      debugPrint('❌ Error getting current user email: $e');
+      return null;
+    }
+  }
+
   /// List all Firebase projects accessible by the user
   /// NO BILLING REQUIRED - This is a simple read operation!
   static Future<List<Map<String, dynamic>>?> listUserProjects({
@@ -146,12 +157,27 @@ class FirebaseProjectVerifier {
     final success = result['success'] == true;
     final needsBilling = result['needsBilling'] == true;
     final stage = result['stage'] as String?;
+    
+    // Extract billing info (available in both billing_required and completed stages)
+    final billingPlan = result['billingPlan'] as String?;
+    final billingAccountName = result['billingAccountName'] as String?;
+    final billingEnabled = result['billingEnabled'] as bool?;
 
     if (stage == 'billing_required') {
+      // Add billing info to instructions
+      final billingInstructions = Map<String, dynamic>.from(
+        result['billingInstructions'] as Map<String, dynamic>? ?? {}
+      );
+      billingInstructions['billingPlan'] = billingPlan;
+      billingInstructions['billingAccountName'] = billingAccountName;
+      
       return {
         'success': false,
         'needsBilling': true,
-        'billingInstructions': result['billingInstructions'],
+        'billingEnabled': billingEnabled,
+        'billingPlan': billingPlan,
+        'billingAccountName': billingAccountName,
+        'billingInstructions': billingInstructions,
         'message': result['message'] ?? 'Billing required',
       };
     }
@@ -160,6 +186,9 @@ class FirebaseProjectVerifier {
       return {
         'success': true,
         'needsBilling': false,
+        'billingEnabled': billingEnabled,
+        'billingPlan': billingPlan,
+        'billingAccountName': billingAccountName,
         'config': result['config'],
         'servicesEnabled': result['servicesEnabled'],
         'message': result['message'] ?? 'Configuration completed successfully',
@@ -216,29 +245,60 @@ class FirebaseProjectVerifier {
 
   /// Parse fetched config into form-fillable format
   static Map<String, Map<String, String>> parseFirebaseConfig(Map<String, dynamic> config) {
-    return {
-      'web': {
-        'apiKey': config['web']?['apiKey'] ?? '',
-        'authDomain': config['web']?['authDomain'] ?? '',
-        'projectId': config['web']?['projectId'] ?? '',
-        'storageBucket': config['web']?['storageBucket'] ?? '',
-        'messagingSenderId': config['web']?['messagingSenderId'] ?? '',
-        'appId': config['web']?['appId'] ?? '',
-        'measurementId': config['web']?['measurementId'] ?? '',
-      },
-      'android': {
-        'mobilesdk_app_id': config['android']?['mobilesdk_app_id'] ?? '',
-        'current_key': config['android']?['current_key'] ?? '',
-        'project_id': config['android']?['project_id'] ?? '',
-        'storage_bucket': config['android']?['storage_bucket'] ?? '',
-      },
-      'ios': {
-        'mobilesdk_app_id': config['ios']?['mobilesdk_app_id'] ?? '',
-        'api_key': config['ios']?['api_key'] ?? '',
-        'project_id': config['ios']?['project_id'] ?? '',
-        'storage_bucket': config['ios']?['storage_bucket'] ?? '',
-      },
-    };
+    final result = <String, Map<String, String>>{};
+    
+    // Parse Web config
+    if (config['web'] != null) {
+      result['web'] = {
+        'apiKey': config['web']?['apiKey']?.toString() ?? '',
+        'appId': config['web']?['appId']?.toString() ?? '',
+        'messagingSenderId': config['web']?['messagingSenderId']?.toString() ?? '',
+        'projectId': config['web']?['projectId']?.toString() ?? '',
+        'authDomain': config['web']?['authDomain']?.toString() ?? '',
+        'databaseURL': config['web']?['databaseURL']?.toString() ?? '',
+        'storageBucket': config['web']?['storageBucket']?.toString() ?? '',
+        'measurementId': config['web']?['measurementId']?.toString() ?? '',
+      };
+    }
+    
+    // Parse Android config
+    if (config['android'] != null) {
+      result['android'] = {
+        'apiKey': config['android']?['current_key']?.toString() ?? '',
+        'appId': config['android']?['mobilesdk_app_id']?.toString() ?? '',
+        'messagingSenderId': '', // Not available in Android config
+        'projectId': config['android']?['project_id']?.toString() ?? '',
+        'databaseURL': '',
+        'storageBucket': config['android']?['storage_bucket']?.toString() ?? '',
+      };
+    }
+    
+    // Parse iOS config
+    if (config['ios'] != null) {
+      result['ios'] = {
+        'apiKey': config['ios']?['api_key']?.toString() ?? '',
+        'appId': config['ios']?['mobilesdk_app_id']?.toString() ?? '',
+        'messagingSenderId': '', // Not available in iOS config
+        'projectId': config['ios']?['project_id']?.toString() ?? '',
+        'databaseURL': '',
+        'storageBucket': config['ios']?['storage_bucket']?.toString() ?? '',
+        'androidClientId': '',
+        'iosBundleId': config['ios']?['bundle_id']?.toString() ?? '',
+      };
+    }
+    
+    // macOS and Windows can reuse web config
+    if (result.containsKey('web')) {
+      result['macos'] = Map.from(result['web']!);
+      result['windows'] = Map.from(result['web']!);
+    }
+    
+    // If iOS exists, copy to macOS (override web)
+    if (result.containsKey('ios')) {
+      result['macos'] = Map.from(result['ios']!);
+    }
+    
+    return result;
   }
 
   /// Get verification status with helpful messages

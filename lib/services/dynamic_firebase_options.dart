@@ -8,6 +8,15 @@ import '../firebase_options.dart';
 class DynamicFirebaseOptions {
   static FirebaseOptions? _cachedOptions;
   
+  // 🚀 IN-MEMORY CACHE for instant startup
+  static bool? _cachedHasSchoolKey;
+  static String? _cachedSchoolKey;
+  static String? _cachedSchoolName;
+  
+  // 🚀 IN-MEMORY CACHE for login state (instant session restore!)
+  static String? _cachedSessionUserId;
+  static String? _cachedSessionRole;
+  
   /// Get Firebase options - checks local storage first, then Firestore, or defaults
   static Future<FirebaseOptions> getOptions() async {
     // Return cached options if available in memory
@@ -188,6 +197,13 @@ class DynamicFirebaseOptions {
   static Future<void> clearCache() async {
     _cachedOptions = null;
     
+    // 🚀 Clear in-memory caches
+    _cachedHasSchoolKey = null;
+    _cachedSchoolKey = null;
+    _cachedSchoolName = null;
+    _cachedSessionUserId = null;
+    _cachedSessionRole = null;
+    
     // Clear local storage cache
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -202,33 +218,152 @@ class DynamicFirebaseOptions {
     }
   }
   
-  /// Check if school key is configured
+  /// Check if school key is configured (INSTANT with in-memory cache!)
   static Future<bool> hasSchoolKey() async {
+    // 🚀 Return cached value instantly (no storage read!)
+    if (_cachedHasSchoolKey != null) {
+      debugPrint('⚡ hasSchoolKey: Using in-memory cache = $_cachedHasSchoolKey (INSTANT)');
+      return _cachedHasSchoolKey!;
+    }
+    
+    // First call: Read from storage and cache it
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool('has_school_key') ?? false;
+      _cachedHasSchoolKey = prefs.getBool('has_school_key') ?? false;
+      debugPrint('✅ hasSchoolKey: Loaded from SharedPreferences = $_cachedHasSchoolKey (CACHED for next time)');
+      return _cachedHasSchoolKey!;
     } catch (e) {
+      _cachedHasSchoolKey = false;
       return false;
     }
   }
   
-  /// Get current school key
+  /// Get current school key (INSTANT with in-memory cache!)
   static Future<String?> getSchoolKey() async {
+    // 🚀 Return cached value instantly
+    if (_cachedSchoolKey != null) {
+      debugPrint('⚡ getSchoolKey: Using in-memory cache (INSTANT)');
+      return _cachedSchoolKey;
+    }
+    
+    // First call: Read from storage and cache it
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString('school_key');
+      _cachedSchoolKey = prefs.getString('school_key');
+      debugPrint('✅ getSchoolKey: Loaded from SharedPreferences (CACHED for next time)');
+      return _cachedSchoolKey;
     } catch (e) {
       return null;
     }
   }
   
-  /// Get current school name
+  /// Get current school name (INSTANT with in-memory cache!)
   static Future<String?> getSchoolName() async {
+    // 🚀 Return cached value instantly
+    if (_cachedSchoolName != null) {
+      debugPrint('⚡ getSchoolName: Using in-memory cache (INSTANT)');
+      return _cachedSchoolName;
+    }
+    
+    // First call: Read from storage and cache it
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString('school_name');
+      _cachedSchoolName = prefs.getString('school_name');
+      debugPrint('✅ getSchoolName: Loaded from SharedPreferences (CACHED for next time)');
+      return _cachedSchoolName;
     } catch (e) {
       return null;
+    }
+  }
+  
+  /// Update school key and refresh cache (call this when saving new school key)
+  static Future<void> setSchoolKey(String schoolKey, String schoolName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('school_key', schoolKey);
+      await prefs.setString('school_name', schoolName);
+      await prefs.setBool('has_school_key', true);
+      
+      // 🚀 Update in-memory cache instantly
+      _cachedSchoolKey = schoolKey;
+      _cachedSchoolName = schoolName;
+      _cachedHasSchoolKey = true;
+      
+      debugPrint('✅ School key saved and cached: $schoolKey');
+    } catch (e) {
+      debugPrint('⚠️ Error saving school key: $e');
+    }
+  }
+  
+  /// Get session user ID (INSTANT with in-memory cache!)
+  static Future<String?> getSessionUserId() async {
+    // 🚀 Return cached value instantly
+    if (_cachedSessionUserId != null) {
+      debugPrint('⚡ getSessionUserId: Using in-memory cache (INSTANT)');
+      return _cachedSessionUserId;
+    }
+    
+    // First call: Read from storage and cache it
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedSessionUserId = prefs.getString('session_userId');
+      debugPrint('✅ getSessionUserId: Loaded from SharedPreferences (CACHED for next time)');
+      return _cachedSessionUserId;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Get session user role (INSTANT with in-memory cache!)
+  static Future<String?> getSessionRole() async {
+    // 🚀 Return cached value instantly
+    if (_cachedSessionRole != null) {
+      debugPrint('⚡ getSessionRole: Using in-memory cache (INSTANT)');
+      return _cachedSessionRole;
+    }
+    
+    // First call: Read from storage and cache it
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedSessionRole = prefs.getString('session_role');
+      debugPrint('✅ getSessionRole: Loaded from SharedPreferences (CACHED for next time)');
+      return _cachedSessionRole;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Save session and update cache (call this on login)
+  static Future<void> saveSession(String userId, String role) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('session_userId', userId);
+      await prefs.setString('session_role', role);
+      
+      // 🚀 Update in-memory cache instantly
+      _cachedSessionUserId = userId;
+      _cachedSessionRole = role;
+      
+      debugPrint('✅ Session saved and cached: $userId ($role)');
+    } catch (e) {
+      debugPrint('⚠️ Error saving session: $e');
+    }
+  }
+  
+  /// Clear session and cache (call this on logout)
+  static Future<void> clearSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('session_userId');
+      await prefs.remove('session_role');
+      
+      // 🚀 Clear in-memory cache
+      _cachedSessionUserId = null;
+      _cachedSessionRole = null;
+      
+      debugPrint('✅ Session cleared from storage and cache');
+    } catch (e) {
+      debugPrint('⚠️ Error clearing session: $e');
     }
   }
 }

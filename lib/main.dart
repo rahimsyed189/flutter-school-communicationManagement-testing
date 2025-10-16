@@ -433,13 +433,13 @@ class _SessionGateState extends State<_SessionGate> {
       debugPrint('Failed to load background in SessionGate: $e');
     }
     
-    // Then check login state
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('session_userId');
-    final role = prefs.getString('session_role');
-    final hasLaunchedBefore = prefs.getBool('has_launched_before') ?? false;
+    // 🚀 Use cached session check (INSTANT on second launch!)
+    final userId = await DynamicFirebaseOptions.getSessionUserId();
+    final role = await DynamicFirebaseOptions.getSessionRole();
     
-    // Mark that app has been launched
+    // Mark that app has been launched (only for first-time check)
+    final prefs = await SharedPreferences.getInstance();
+    final hasLaunchedBefore = prefs.getBool('has_launched_before') ?? false;
     if (!hasLaunchedBefore) {
       await prefs.setBool('has_launched_before', true);
     }

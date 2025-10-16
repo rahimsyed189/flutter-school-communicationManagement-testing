@@ -38,6 +38,11 @@ exports.verifyAndFetchFirebaseConfig = functions.https.onRequest((req, res) => {
         auth: oauth2Client
       });
 
+      const cloudBilling = google.cloudbilling({
+        version: 'v1',
+        auth: oauth2Client
+      });
+
       // Step 1: Check if project exists
       let projectExists = false;
       let firestoreEnabled = false;
@@ -63,7 +68,40 @@ exports.verifyAndFetchFirebaseConfig = functions.https.onRequest((req, res) => {
         });
       }
 
-      // Step 2: Check enabled services
+      // Step 2: Check billing status and plan
+      let billingEnabled = false;
+      let billingAccountName = '';
+      let billingPlan = 'Unknown';
+      let billingCheckError = null;
+      
+      try {
+        console.log('📊 Checking billing status for project:', projectId);
+        const billingInfo = await cloudBilling.projects.getBillingInfo({
+          name: `projects/${projectId}`
+        });
+        
+        console.log('Raw billing API response:', JSON.stringify(billingInfo.data, null, 2));
+        
+        billingEnabled = billingInfo.data.billingEnabled || false;
+        billingAccountName = billingInfo.data.billingAccountName || '';
+        
+        // Determine plan: If billing is enabled, it's Blaze (pay-as-you-go)
+        // If billing is NOT enabled, it's Spark (free tier)
+        billingPlan = billingEnabled ? 'Blaze (Pay as you go)' : 'Spark (Free)';
+        
+        console.log('✅ Billing status checked:', { 
+          billingEnabled, 
+          billingAccountName, 
+          billingPlan 
+        });
+      } catch (error) {
+        billingCheckError = error.message;
+        console.log('⚠️ Warning: Could not check billing:', error.message);
+        console.log('Error details:', JSON.stringify(error, null, 2));
+        // Continue with default values
+      }
+
+      // Step 3: Check enabled services
       try {
         const services = await serviceUsage.services.list({
           parent: `projects/${projectId}`,
@@ -208,6 +246,17 @@ exports.verifyAndFetchFirebaseConfig = functions.https.onRequest((req, res) => {
           androidAppExists,
           iosAppExists,
         },
+        billing: {
+          billingEnabled,
+          billingAccountName,
+          billingPlan,
+          billingCheckError
+        },
+        // Also include at root level for backwards compatibility
+        billingEnabled,
+        billingPlan,
+        billingAccountName,
+        billingCheckError,
         config: {
           web: webConfig,
           android: androidConfig,

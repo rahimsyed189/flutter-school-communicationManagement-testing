@@ -20,6 +20,8 @@ import 'server_cleanup_page.dart';
 import 'school_notifications_template.dart';
 import 'admin_background_image_page.dart';
 import 'school_registration_page.dart';
+import 'school_registration_wizard_page.dart';
+import 'services/dynamic_firebase_options.dart';
 
 // Global singleton to cache background image across page navigations
 class BackgroundImageCache {
@@ -806,11 +808,14 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             await NotificationService.instance.disableForUser(widget.currentUserId);
                             await NotificationService.instance.unsubscribeFromUserGroups(widget.currentUserId);
                           } catch (_) {}
-                          // Clear session
+                          
+                          // 🚀 Clear session with cache (instant logout!)
+                          await DynamicFirebaseOptions.clearSession();
+                          
+                          // Clear session name separately
                           final prefs = await SharedPreferences.getInstance();
-                          await prefs.remove('session_userId');
-                          await prefs.remove('session_role');
                           await prefs.remove('session_name');
+                          
                           if (!mounted) return;
                           Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                         },
@@ -857,10 +862,14 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                                 await NotificationService.instance.disableForUser(widget.currentUserId);
                                                 await NotificationService.instance.unsubscribeFromUserGroups(widget.currentUserId);
                                               } catch (_) {}
+                                              
+                                              // 🚀 Clear session with cache (instant logout!)
+                                              await DynamicFirebaseOptions.clearSession();
+                                              
+                                              // Clear session name separately
                                               final prefs = await SharedPreferences.getInstance();
-                                              await prefs.remove('session_userId');
-                                              await prefs.remove('session_role');
                                               await prefs.remove('session_name');
+                                              
                                               if (!mounted) return;
                                               Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                                             },
@@ -1531,7 +1540,7 @@ class AdminSettingsPage extends StatelessWidget {
               subtitle: const Text('Create new school Firebase key'),
               onTap: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SchoolRegistrationPage()),
+                  MaterialPageRoute(builder: (_) => const SchoolRegistrationWizardPage()),
                 );
               },
             ),

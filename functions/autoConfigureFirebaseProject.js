@@ -62,21 +62,36 @@ exports.autoConfigureFirebaseProject = functions.https.onRequest((req, res) => {
         });
       }
 
-      // Step 2: Check billing status
+      // Step 2: Check billing status and plan
       let billingEnabled = false;
       let billingAccountName = '';
+      let billingPlan = 'Spark (Free)'; // Default to Spark
+      let billingCheckError = null;
       
       try {
         const billingInfo = await cloudBilling.projects.getBillingInfo({
           name: `projects/${projectId}`
         });
         
+        console.log('Raw billing API response:', JSON.stringify(billingInfo.data, null, 2));
+        
         billingEnabled = billingInfo.data.billingEnabled || false;
         billingAccountName = billingInfo.data.billingAccountName || '';
         
-        console.log('Billing status:', { billingEnabled, billingAccountName });
+        // Determine plan: If billing is enabled, it's Blaze (pay-as-you-go)
+        // If billing is NOT enabled, it's Spark (free tier)
+        billingPlan = billingEnabled ? 'Blaze (Pay as you go)' : 'Spark (Free)';
+        
+        console.log('✅ Billing status checked:', { 
+          billingEnabled, 
+          billingAccountName, 
+          billingPlan 
+        });
       } catch (error) {
-        console.log('Warning: Could not check billing:', error.message);
+        billingCheckError = error.message;
+        console.log('⚠️ Warning: Could not check billing:', error.message);
+        console.log('Error details:', error);
+        // Continue with default values (Spark plan, no billing)
       }
 
       // Step 3: If no billing, return instructions
@@ -87,6 +102,9 @@ exports.autoConfigureFirebaseProject = functions.https.onRequest((req, res) => {
           stage: 'billing_required',
           projectExists: true,
           billingEnabled: false,
+          billingPlan: billingPlan,
+          billingAccountName: billingAccountName || 'None',
+          billingCheckError: billingCheckError, // Include error if any
           needsBilling: true,
           message: 'Billing must be enabled before Firebase services can be configured.',
           billingInstructions: {
@@ -280,6 +298,8 @@ exports.autoConfigureFirebaseProject = functions.https.onRequest((req, res) => {
         message: 'Firebase project configured successfully!',
         projectExists: true,
         billingEnabled: true,
+        billingPlan: billingPlan,
+        billingAccountName: billingAccountName || 'Connected',
         needsBilling: false,
         servicesEnabled: results.servicesEnabled,
         appsRegistered: results.appsRegistered,

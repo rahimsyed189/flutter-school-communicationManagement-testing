@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'firebase_options.dart';
 import 'services/dynamic_firebase_options.dart';
-import 'services/auto_firebase_creator.dart';
 import 'services/firebase_project_verifier.dart';
 
 class SchoolRegistrationPage extends StatefulWidget {
@@ -24,7 +23,6 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
   
   bool _isLoading = false;
   bool _showFirebaseConfig = false;
-  bool _isCreatingProject = false;
   bool _isVerifyingProject = false;
   bool _isLoadingProjects = false;
   String _creationProgress = '';
@@ -131,101 +129,6 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
     final schoolName = _schoolNameController.text.trim().replaceAll(' ', '_').toUpperCase();
     final randomPart = random.nextInt(999999).toString().padLeft(6, '0');
     return 'SCHOOL_${schoolName}_$randomPart';
-  }
-
-  Future<void> _autoCreateFirebaseProject() async {
-    // Validate school name is entered
-    if (_schoolNameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⚠️ Please enter your school name first'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isCreatingProject = true;
-      _creationProgress = 'Step 1/5: Signing in with Google...';
-    });
-
-    try {
-      // Step 1: Sign in with Google
-      final accessToken = await AutoFirebaseCreator.signInWithGoogle();
-      
-      if (accessToken == null) {
-        throw Exception('Google Sign-In cancelled or failed');
-      }
-
-      setState(() => _creationProgress = 'Step 2/5: Generating project ID...');
-
-      // Step 2: Generate valid project ID
-      final schoolName = _schoolNameController.text.trim();
-      final projectId = AutoFirebaseCreator.generateProjectId(schoolName);
-      
-      setState(() => _creationProgress = 'Step 3/5: Creating Firebase project...\n(This may take 2-3 minutes)');
-
-      // Step 3: Call Cloud Function to create project
-      // Using your Firebase project's Cloud Function URL
-      final cloudFunctionUrl = 'https://us-central1-adilabadautocabs.cloudfunctions.net/createFirebaseProject';
-      
-      final result = await AutoFirebaseCreator.createFirebaseProject(
-        accessToken: accessToken,
-        projectId: projectId,
-        displayName: schoolName,
-        cloudFunctionUrl: cloudFunctionUrl,
-      );
-
-      if (result == null) {
-        throw Exception('Failed to create Firebase project. Please check Cloud Function logs.');
-      }
-
-      setState(() => _creationProgress = 'Step 4/5: Parsing configuration...');
-
-      // Step 4: Parse the configuration
-      final configs = AutoFirebaseCreator.parseFirebaseConfig(result);
-
-      setState(() => _creationProgress = 'Step 5/5: Auto-filling forms...');
-
-      // Step 5: Auto-fill all the form fields
-      for (var platform in configs.keys) {
-        final platformConfig = configs[platform]!;
-        platformConfig.forEach((key, value) {
-          if (_firebaseControllers[platform]?.containsKey(key) == true) {
-            _firebaseControllers[platform]![key]!.text = value;
-          }
-        });
-      }
-
-      setState(() {
-        _isCreatingProject = false;
-        _creationProgress = '';
-      });
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ Firebase project "$projectId" created successfully!\nAll API keys have been auto-filled.'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-
-    } catch (e) {
-      setState(() {
-        _isCreatingProject = false;
-        _creationProgress = '';
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 7),
-        ),
-      );
-    }
   }
 
   // Load user's Firebase projects (NO BILLING REQUIRED!)
@@ -347,6 +250,9 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
       // Step 2: Check auto-configure status
       final status = FirebaseProjectVerifier.getAutoConfigureStatus(result);
 
+      // Step 2.5: Show billing status info
+      _showBillingStatusInfo(status);
+
       // Step 3: Handle billing required
       if (status['needsBilling'] == true) {
         setState(() {
@@ -411,6 +317,45 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
     }
   }
 
+  // Show billing status info
+  void _showBillingStatusInfo(Map<String, dynamic> status) {
+    final billingPlan = status['billingPlan'] ?? 'Unknown';
+    final billingEnabled = status['billingEnabled'] ?? false;
+    final billingAccount = status['billingAccountName'] ?? 'None';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  billingEnabled ? Icons.check_circle : Icons.info,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Billing Status',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Plan: $billingPlan'),
+            Text('Account: $billingAccount'),
+            Text('Status: ${billingEnabled ? "Active ✅" : "Not Enabled ❌"}'),
+          ],
+        ),
+        backgroundColor: billingEnabled ? Colors.green.shade700 : Colors.orange.shade700,
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   // Show billing instructions dialog
   void _showBillingInstructionsDialog(Map<String, dynamic>? billingInfo) {
     if (billingInfo == null) return;
@@ -436,6 +381,48 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Current Status
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Current Status:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.account_balance_wallet, size: 18, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Plan: ${billingInfo['billingPlan'] ?? 'Spark (Free)'}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.credit_card, size: 18, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Billing: ${billingInfo['billingAccountName'] ?? 'Not Connected'}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
               // Description
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1298,7 +1285,7 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
                           
                           // Verify & Fetch button
                           ElevatedButton.icon(
-                            onPressed: (_isVerifyingProject || _isCreatingProject) ? null : _verifyAndFetchConfig,
+                            onPressed: _isVerifyingProject ? null : _verifyAndFetchConfig,
                             icon: _isVerifyingProject
                                 ? const SizedBox(
                                     width: 20,
@@ -1386,64 +1373,6 @@ class _SchoolRegistrationPageState extends State<SchoolRegistrationPage> {
                                 ),
                               ),
                             ),
-                          
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Row(
-                              children: [
-                                Expanded(child: Divider()),
-                                Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text('OR', style: TextStyle(color: Colors.grey)),
-                                ),
-                                Expanded(child: Divider()),
-                              ],
-                            ),
-                          ),
-                          
-                          // Auto-Create option (advanced users)
-                          ExpansionTile(
-                            title: const Text(
-                              'Advanced: Auto-Create New Project',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                            ),
-                            subtitle: const Text(
-                              'Only works if you already have billing enabled (30% success rate)',
-                              style: TextStyle(fontSize: 11, color: Colors.orange),
-                            ),
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  children: [
-                                    ElevatedButton.icon(
-                                      onPressed: (_isCreatingProject || _isVerifyingProject) ? null : _autoCreateFirebaseProject,
-                                      icon: _isCreatingProject
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                            )
-                                          : const Icon(Icons.auto_awesome),
-                                      label: Text(_isCreatingProject ? 'Creating Project...' : 'Auto-Create Firebase Project'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.deepPurple,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                        minimumSize: const Size(double.infinity, 50),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      '⚠️ Requires billing account already set up on your Google account',
-                                      style: TextStyle(fontSize: 11, color: Colors.red),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
                           
                           const Divider(height: 32),
                         ],

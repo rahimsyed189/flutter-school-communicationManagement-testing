@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'services/dynamic_firebase_options.dart';
 import 'package:minio/minio.dart';
 import 'fast_download_manager.dart';
 import 'dart:io';
@@ -698,10 +699,13 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                       ),
                     );
                   } else if (value == 'signout') {
+                    // 🚀 Clear session with cache (instant logout!)
+                    await DynamicFirebaseOptions.clearSession();
+                    
+                    // Clear session name separately
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.remove('session_userId');
-                    await prefs.remove('session_role');
                     await prefs.remove('session_name');
+                    
                     if (!context.mounted) return;
                     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
                   }

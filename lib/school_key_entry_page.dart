@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/dynamic_firebase_options.dart';
 import 'school_registration_page.dart';
+import 'school_registration_wizard_page.dart';
 
 class SchoolKeyEntryPage extends StatefulWidget {
   const SchoolKeyEntryPage({Key? key}) : super(key: key);
@@ -55,8 +57,9 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
 
       // Save school key and Firebase config to local storage
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('school_key', schoolKey);
-      await prefs.setString('school_name', data['schoolName'] ?? '');
+      
+      // 🚀 Use helper method to save and cache school key instantly
+      await DynamicFirebaseOptions.setSchoolKey(schoolKey, data['schoolName'] ?? '');
       
       // Save Firebase configuration to local storage
       if (data.containsKey('firebaseConfig')) {
@@ -71,9 +74,6 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
           }
         });
       }
-
-      // Mark that key has been entered
-      await prefs.setBool('has_school_key', true);
 
       if (mounted) {
         // Show success message
@@ -99,7 +99,9 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('use_default_firebase', true);
-      await prefs.setBool('has_school_key', true);
+      
+      // 🚀 Use helper method to mark as configured and cache instantly
+      await DynamicFirebaseOptions.setSchoolKey('default', 'Default Configuration');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -120,7 +122,7 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
   Future<void> _navigateToRegistration() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const SchoolRegistrationPage()),
+      MaterialPageRoute(builder: (_) => const SchoolRegistrationWizardPage()),
     );
 
     if (result != null && result is String) {

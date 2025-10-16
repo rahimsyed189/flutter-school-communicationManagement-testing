@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/dynamic_firebase_options.dart';
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -259,10 +260,14 @@ class _LoginPageState extends State<LoginPage> {
         await NotificationService.instance.enableForUser(userData['userId']);
       }
 
-      // Persist minimal session
+      // 🚀 Persist session with cache (INSTANT login state check on next launch!)
+      await DynamicFirebaseOptions.saveSession(
+        userData['userId'] ?? userId,
+        (userData['role'] ?? 'user').toString(),
+      );
+      
+      // Save session name separately (not cached, rarely used)
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('session_userId', userData['userId'] ?? userId);
-      await prefs.setString('session_role', (userData['role'] ?? 'user').toString());
       await prefs.setString('session_name', (userData['name'] ?? '').toString());
 
       // Remember creds for next time if opted-in (plain text per requirement)
