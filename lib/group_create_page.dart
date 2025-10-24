@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'notification_service.dart';
+import 'services/school_context.dart';
 
 class GroupCreatePage extends StatefulWidget {
   final String currentUserId;
@@ -37,6 +38,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
         'createdAt': FieldValue.serverTimestamp(),
         'lastMessage': '',
         'lastTimestamp': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       });
   // Subscribe creator to this group's topic
   try { await NotificationService.instance.subscribeToGroup(doc.id); } catch (_) {}
@@ -143,7 +145,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
           const SizedBox(height: 8),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection('users').orderBy('name', descending: false).snapshots(),
+              stream: FirebaseFirestore.instance.collection('users').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).orderBy('name', descending: false).snapshots(),
               builder: (context, snap) {
                 if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
                 if (!snap.hasData) return const Center(child: CircularProgressIndicator());

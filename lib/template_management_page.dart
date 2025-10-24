@@ -8,6 +8,7 @@ import 'widgets/custom_template_renderer.dart';
 import 'template_builder_page.dart';
 import 'dart:math';
 import 'dart:typed_data';
+import 'services/school_context.dart';
 
 enum TemplateType {
   general,
@@ -56,15 +57,19 @@ class _TemplateManagementPageState extends State<TemplateManagementPage> {
       QuerySnapshot querySnapshot;
       try {
         // Simple query without ordering to avoid index requirement
+        // 🔥 Filter by schoolId
         querySnapshot = await FirebaseFirestore.instance
             .collection('custom_templates')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .where('isActive', isEqualTo: true)
             .get();
       } catch (error) {
         // If even simple query fails, get all templates and filter locally
         print('Filtered query failed, getting all templates: $error');
+        // 🔥 Filter by schoolId
         querySnapshot = await FirebaseFirestore.instance
             .collection('custom_templates')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .get();
       }
 

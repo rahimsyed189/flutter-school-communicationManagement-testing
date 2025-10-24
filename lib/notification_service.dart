@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'navigation_service.dart';
+import 'services/school_context.dart';
 
 class NotificationService {
   NotificationService._();
@@ -208,7 +209,7 @@ class NotificationService {
       final token = await _messaging.getToken();
       if (token != null) {
         final users = FirebaseFirestore.instance.collection('users');
-        final query = await users.where('userId', isEqualTo: userId).limit(1).get();
+        final query = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: userId).limit(1).get();
         if (query.docs.isNotEmpty) {
           await query.docs.first.reference.collection('devices').doc(token).set(
             {
@@ -226,7 +227,7 @@ class NotificationService {
   Future<void> _saveToken(String userId, String token) async {
     try {
       final users = FirebaseFirestore.instance.collection('users');
-      final query = await users.where('userId', isEqualTo: userId).limit(1).get();
+      final query = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: userId).limit(1).get();
       if (query.docs.isNotEmpty) {
         final userRef = query.docs.first.reference;
         // Backward-compat field and a devices subcollection keyed by the token
@@ -278,6 +279,7 @@ class NotificationService {
     try {
       final qs = await FirebaseFirestore.instance
           .collection('groups')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
           .where('members', arrayContains: userId)
           .get();
       for (final d in qs.docs) {
@@ -290,6 +292,7 @@ class NotificationService {
     try {
       final qs = await FirebaseFirestore.instance
           .collection('groups')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
           .where('members', arrayContains: userId)
           .get();
       for (final d in qs.docs) {
@@ -321,7 +324,7 @@ class NotificationService {
   Future<void> _markConsent(String userId, bool enabled) async {
     try {
       final users = FirebaseFirestore.instance.collection('users');
-      final query = await users.where('userId', isEqualTo: userId).limit(1).get();
+      final query = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: userId).limit(1).get();
       if (query.docs.isNotEmpty) {
         await query.docs.first.reference.set({'notificationEnabled': enabled, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
       }

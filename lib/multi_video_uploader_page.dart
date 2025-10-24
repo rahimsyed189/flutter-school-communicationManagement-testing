@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:minio/minio.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:video_compress/video_compress.dart';
+import 'services/school_context.dart';
 
 class MultiVideoUploaderPage extends StatefulWidget {
 	const MultiVideoUploaderPage({super.key});
@@ -167,7 +168,7 @@ class _MultiVideoUploaderPageState extends State<MultiVideoUploaderPage> {
 				};
 
 				// Also persist in videos collection for reference
-				try { await FirebaseFirestore.instance.collection('videos').add({...meta, 'fileName': videoKey, 'bucket': _bucket}); } catch (_) {}
+				try { await FirebaseFirestore.instance.collection('videos').add({...meta, 'fileName': videoKey, 'bucket': _bucket, 'schoolId': SchoolContext.currentSchoolId}); } catch (_) {}
 
 				attachments.add(meta);
 				_status[key] = 'Done';
@@ -190,7 +191,8 @@ class _MultiVideoUploaderPageState extends State<MultiVideoUploaderPage> {
 	String _buildVideoKey(String name) {
 		final ts = DateTime.now().millisecondsSinceEpoch;
 		final safe = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
-		return 'videos/${ts}_$safe';
+		final schoolId = SchoolContext.currentSchoolId ?? 'default';
+		return 'schools/$schoolId/videos/${ts}_$safe';
 	}
 
 	String _buildThumbKey(String name) {
@@ -199,7 +201,8 @@ class _MultiVideoUploaderPageState extends State<MultiVideoUploaderPage> {
 		final i = base.lastIndexOf('.');
 		if (i > 0) base = base.substring(0, i);
 		base = base.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
-		return 'videos/${ts}_$base.jpg';
+		final schoolId = SchoolContext.currentSchoolId ?? 'default';
+		return 'schools/$schoolId/thumbnails/${ts}_$base.jpg';
 	}
 
 	String _publicUrl(String objectKey) {

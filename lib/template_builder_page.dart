@@ -7,6 +7,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/draggable_template_components.dart';
 import 'widgets/color_picker_dialog.dart';
+import 'services/school_context.dart';
 
 // Simple component class for the builder
 class BuilderComponent {
@@ -6050,6 +6051,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
 
       if (action == 'update' && _isEditingExistingTemplate && _currentTemplateId != null) {
         // Update existing template
+        // 🔥 schoolId already exists, just update
         await FirebaseFirestore.instance
             .collection('custom_templates')
             .doc(_currentTemplateId!)
@@ -6068,6 +6070,9 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         if (action == 'update') {
           templateData['createdAt'] = FieldValue.serverTimestamp();
         }
+        
+        // 🔥 Add schoolId to new template
+        templateData['schoolId'] = SchoolContext.currentSchoolId;
         
         await FirebaseFirestore.instance
             .collection('custom_templates')
@@ -6192,6 +6197,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
         }
         
         // Fetch the exact saved template data from Firestore
+        // 🔥 schoolId filtering happens automatically in security rules
         final templateDoc = await FirebaseFirestore.instance
             .collection('custom_templates')
             .doc(_currentTemplateId!)
@@ -6312,6 +6318,7 @@ class _TemplateBuilderPageState extends State<TemplateBuilderPage> {
           'templateType': 'custom',
           'templateData': templateData,
           'reactions': <String, dynamic>{},
+          'schoolId': SchoolContext.currentSchoolId,
         });
 
         if (mounted) {

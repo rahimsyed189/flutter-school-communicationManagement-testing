@@ -94,7 +94,8 @@ class _ImageUploaderPageState extends State<ImageUploaderPage> {
     try {
       final name = file.name;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final key = 'images/${timestamp}_$name';
+      final schoolId = SchoolContext.currentSchoolId ?? 'default';
+      final key = 'schools/$schoolId/images/${timestamp}_$name';
 
       int total;
       Stream<Uint8List> stream;
@@ -149,6 +150,7 @@ class _ImageUploaderPageState extends State<ImageUploaderPage> {
         'bucket': r2BucketName,
         'title': _titleCtrl.text.trim(),
         'uploadedAt': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       };
 
       await FirebaseFirestore.instance.collection('images').add(data);

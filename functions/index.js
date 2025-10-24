@@ -413,7 +413,11 @@ async function cleanupR2Storage(cutoffDate, r2Config) {
   console.log('Starting R2 cleanup - deleting files from specific folders (excluding currentPageBackgroundImage)');
   
   // Define folders to clean (exclude currentPageBackgroundImage)
-  const foldersToClean = ['images/', 'videos/', 'thumbnails/', 'pdfs/', 'documents/'];
+  // Support both legacy flat structure and new school-specific structure
+  const foldersToClean = [
+    'images/', 'videos/', 'thumbnails/', 'pdfs/', 'documents/',  // Legacy
+    'schools/'  // New school-specific structure (will clean all schools)
+  ];
   console.log('Folders to clean:', foldersToClean);
 
   try {

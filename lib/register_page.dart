@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
+import 'services/school_context.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -31,8 +32,15 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _loadOptions() async {
     try {
-      final classesSnap = await FirebaseFirestore.instance.collection('classes').get();
-      final subjectsSnap = await FirebaseFirestore.instance.collection('subjects').get();
+      // 🔥 Filter by schoolId
+      final classesSnap = await FirebaseFirestore.instance
+          .collection('classes')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+          .get();
+      final subjectsSnap = await FirebaseFirestore.instance
+          .collection('subjects')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+          .get();
       setState(() {
         _classes = classesSnap.docs.map((d) => (d['name'] ?? d.id).toString()).toList();
         _subjects = subjectsSnap.docs.map((d) => (d['name'] ?? d.id).toString()).toList();
@@ -45,8 +53,13 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() { _isLoading = true; });
     try {
       // Check duplicates by phone/email if provided
+      // 🔥 Filter by schoolId - only check within THIS school
       final col = FirebaseFirestore.instance.collection('users');
-      final dupPhone = await col.where('phone', isEqualTo: _phoneController.text.trim()).limit(1).get();
+      final dupPhone = await col
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+          .where('phone', isEqualTo: _phoneController.text.trim())
+          .limit(1)
+          .get();
       if (dupPhone.docs.isNotEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone already in use')));
@@ -54,7 +67,12 @@ class _RegisterPageState extends State<RegisterPage> {
         return;
       }
       if (_emailController.text.trim().isNotEmpty) {
-        final dupEmail = await col.where('email', isEqualTo: _emailController.text.trim()).limit(1).get();
+        // 🔥 Filter by schoolId
+        final dupEmail = await col
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+            .where('email', isEqualTo: _emailController.text.trim())
+            .limit(1)
+            .get();
         if (dupEmail.docs.isNotEmpty) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email already in use')));
@@ -65,6 +83,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
       final regRef = FirebaseFirestore.instance.collection('registrations').doc();
       await regRef.set({
+        'schoolId': SchoolContext.currentSchoolId,  // 🔥 ADD schoolId
         'status': 'pending', // pending|approved|rejected
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),

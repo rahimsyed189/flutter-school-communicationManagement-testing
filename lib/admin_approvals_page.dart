@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/school_context.dart';
 
 class AdminApprovalsPage extends StatefulWidget {
   final String currentUserId;
@@ -30,7 +31,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage> {
     }
     try {
       final users = FirebaseFirestore.instance.collection('users');
-      final dup = await users.where('userId', isEqualTo: phone).limit(1).get();
+      final dup = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: phone).limit(1).get();
       if (dup.docs.isNotEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User already exists with this phone')));
@@ -49,6 +50,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage> {
         'subject': role == 'staff' ? (subject.isNotEmpty ? subject : null) : null,
         'notificationEnabled': false,
         'createdAt': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       });
       await regDoc.reference.update({
         'status': 'approved',
@@ -92,7 +94,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage> {
         }
         // Skip if user already exists
         final users = FirebaseFirestore.instance.collection('users');
-        final dup = await users.where('userId', isEqualTo: phone).limit(1).get();
+        final dup = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: phone).limit(1).get();
         if (dup.docs.isNotEmpty) {
           skipped++;
           // Still mark registration as approved referencing existing user?
@@ -123,6 +125,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage> {
           'subject': role == 'staff' ? (subject.isNotEmpty ? subject : null) : null,
           'notificationEnabled': false,
           'createdAt': FieldValue.serverTimestamp(),
+          'schoolId': SchoolContext.currentSchoolId,
         });
         await d.reference.update({
           'status': 'approved',
@@ -152,6 +155,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('registrations')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .where('status', isEqualTo: 'pending')
             .snapshots(),
         builder: (context, snapshot) {

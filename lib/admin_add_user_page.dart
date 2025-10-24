@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/school_context.dart';
 
 class AdminAddUserPage extends StatefulWidget {
   final String currentUserId;
@@ -38,34 +39,36 @@ class _AdminAddUserPageState extends State<AdminAddUserPage> {
       // Load classes
       final classesSnap = await db
           .collection('classes')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
           .orderBy('order', descending: false)
           .get()
-          .catchError((_) async => await db.collection('classes').get());
+          .catchError((_) async => await db.collection('classes').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).get());
       var classes = classesSnap.docs
           .map((d) => (d.data()['name'] as String?)?.trim())
           .whereType<String>()
           .where((s) => s.isNotEmpty)
           .toList();
       if (classes.isEmpty) {
-        await db.collection('classes').add({'name': 'Class 1', 'order': 1});
-        await db.collection('classes').add({'name': 'Class 2', 'order': 2});
+        await db.collection('classes').add({'name': 'Class 1', 'order': 1, 'schoolId': SchoolContext.currentSchoolId});
+        await db.collection('classes').add({'name': 'Class 2', 'order': 2, 'schoolId': SchoolContext.currentSchoolId});
         classes = ['Class 1', 'Class 2'];
       }
 
       // Load subjects
       final subjectsSnap = await db
           .collection('subjects')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
           .orderBy('order', descending: false)
           .get()
-          .catchError((_) async => await db.collection('subjects').get());
+          .catchError((_) async => await db.collection('subjects').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).get());
       var subjects = subjectsSnap.docs
           .map((d) => (d.data()['name'] as String?)?.trim())
           .whereType<String>()
           .where((s) => s.isNotEmpty)
           .toList();
       if (subjects.isEmpty) {
-        await db.collection('subjects').add({'name': 'Subject 1', 'order': 1});
-        await db.collection('subjects').add({'name': 'Subject 2', 'order': 2});
+        await db.collection('subjects').add({'name': 'Subject 1', 'order': 1, 'schoolId': SchoolContext.currentSchoolId});
+        await db.collection('subjects').add({'name': 'Subject 2', 'order': 2, 'schoolId': SchoolContext.currentSchoolId});
         subjects = ['Subject 1', 'Subject 2'];
       }
 
@@ -90,7 +93,7 @@ class _AdminAddUserPageState extends State<AdminAddUserPage> {
     final users = FirebaseFirestore.instance.collection('users');
     for (int i = 0; i < tries; i++) {
       final candidate = (10000 + (DateTime.now().microsecondsSinceEpoch % 90000)).toString();
-      final clash = await users.where('userId', isEqualTo: candidate).limit(1).get();
+      final clash = await users.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: candidate).limit(1).get();
       if (clash.docs.isEmpty) return candidate;
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -131,6 +134,7 @@ class _AdminAddUserPageState extends State<AdminAddUserPage> {
         'role': _role,
         'notificationEnabled': _preEnableNotifications,
         'createdAt': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       };
       if (_role == 'student') {
         data['class'] = _selectedClass;

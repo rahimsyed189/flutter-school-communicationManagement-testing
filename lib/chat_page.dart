@@ -14,6 +14,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:background_downloader/background_downloader.dart';
+import 'services/download_service.dart';
 import 'youtube_test_page.dart';
 import 'youtube_uploader_page.dart';
 import 'download_state.dart';
@@ -203,6 +204,7 @@ class _ChatPageState extends State<ChatPage> {
       'sender': widget.userEmail,
       'message': text,
       'timestamp': FieldValue.serverTimestamp(),
+      'schoolId': SchoolContext.currentSchoolId,
     });
     _messageController.clear();
   }
@@ -486,7 +488,7 @@ class _ChatPageState extends State<ChatPage> {
       _downloadProgress[url] = 0.0;
     });
     // Start and listen to updates
-    FileDownloader().download(
+    DownloadService().download(
       task,
       onProgress: (progress) {
         if (!mounted) return;
@@ -500,7 +502,7 @@ class _ChatPageState extends State<ChatPage> {
           String? movedPath;
           try {
             if (Platform.isAndroid) {
-              movedPath = await FileDownloader().moveToSharedStorage(task, SharedStorage.downloads);
+              movedPath = await DownloadService().moveToSharedStorage(task, SharedStorage.downloads);
             }
           } catch (_) {}
           final path = movedPath ?? await task.filePath();
@@ -645,6 +647,7 @@ class _ChatPageState extends State<ChatPage> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('chats')
+                  .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
                   .orderBy('timestamp', descending: false)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -1101,6 +1104,7 @@ class _ChatPageState extends State<ChatPage> {
                             'message': url,
                             'type': rType,
                             'timestamp': FieldValue.serverTimestamp(),
+                            'schoolId': SchoolContext.currentSchoolId,
                             'meta': {
                               'width': width,
                               'height': height,

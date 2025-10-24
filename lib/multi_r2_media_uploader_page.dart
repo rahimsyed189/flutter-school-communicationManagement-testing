@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:minio/minio.dart';
+import 'services/school_context.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
@@ -530,6 +531,7 @@ class _MultiR2MediaUploaderPageState extends State<MultiR2MediaUploaderPage> {
         'senderRole': widget.currentUserRole,
         'senderName': widget.currentUserId,
         'timestamp': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       };
       await FirebaseFirestore.instance.collection('communications').add(doc);
 

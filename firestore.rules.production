@@ -1,0 +1,251 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Get user's schoolId from their user document
+    function getUserSchoolId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId;
+    }
+    
+    // Check if document belongs to user's school
+    function belongsToUserSchool() {
+      return resource.data.schoolId == getUserSchoolId();
+    }
+    
+    // Check if incoming data has correct schoolId
+    function hasCorrectSchoolId() {
+      return request.resource.data.schoolId == getUserSchoolId();
+    }
+    
+    // ============================================
+    // COLLECTION RULES WITH SCHOOL ISOLATION
+    // ============================================
+    
+    // USERS COLLECTION
+    match /users/{userId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only admins can delete (add role check if needed)
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // COMMUNICATIONS (Announcements) COLLECTION
+    match /communications/{commId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // STUDENTS COLLECTION
+    match /students/{studentId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // STAFF COLLECTION
+    match /staff/{staffId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // CLASSES COLLECTION
+    match /classes/{classId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // SUBJECTS COLLECTION
+    match /subjects/{subjectId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // CUSTOM TEMPLATES COLLECTION
+    match /custom_templates/{templateId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // REGISTRATIONS COLLECTION (Pending user registrations)
+    match /registrations/{regId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Anyone can create (for self-registration)
+      // But must include schoolId from the school key they entered
+      allow create: if request.resource.data.schoolId != null;
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+    }
+    
+    // GROUPS COLLECTION (Group chats)
+    match /groups/{groupId} {
+      // Read: Only if document belongs to user's school
+      allow read: if isSignedIn() && belongsToUserSchool();
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && hasCorrectSchoolId();
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && belongsToUserSchool();
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && belongsToUserSchool();
+      
+      // Group messages subcollection
+      match /messages/{messageId} {
+        // Messages inherit group's schoolId check
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn();
+      }
+    }
+    
+    // VIDEOS COLLECTION
+    match /videos/{videoId} {
+      // Read: Only if document belongs to user's school (if schoolId exists)
+      allow read: if isSignedIn() && 
+        (!resource.data.keys().hasAll(['schoolId']) || belongsToUserSchool());
+      
+      // Create: Only if schoolId matches user's school
+      allow create: if isSignedIn() && 
+        (!request.resource.data.keys().hasAll(['schoolId']) || hasCorrectSchoolId());
+      
+      // Update: Only if document belongs to user's school
+      allow update: if isSignedIn() && 
+        (!resource.data.keys().hasAll(['schoolId']) || belongsToUserSchool());
+      
+      // Delete: Only if document belongs to user's school
+      allow delete: if isSignedIn() && 
+        (!resource.data.keys().hasAll(['schoolId']) || belongsToUserSchool());
+    }
+    
+    // ============================================
+    // GLOBAL/SHARED COLLECTIONS (No school isolation)
+    // ============================================
+    
+    // SCHOOL REGISTRATIONS (Global - stores school configurations)
+    match /school_registrations/{schoolKey} {
+      // Anyone can read their school's configuration
+      allow read: if true;
+      
+      // Only allow creation (for new school setup)
+      allow create: if true;
+      
+      // Updates restricted (add specific logic if needed)
+      allow update: if false;
+      
+      // No deletion allowed
+      allow delete: if false;
+    }
+    
+    // APP CONFIG (Global settings)
+    match /app_config/{configId} {
+      // Authenticated users can read config
+      allow read: if isSignedIn();
+      
+      // Only admins can write (add admin check if needed)
+      allow write: if isSignedIn();
+    }
+    
+    // CLEANUP STATUS (Global)
+    match /cleanup_status/{statusId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    // NOTIFICATION QUEUE (Global)
+    match /notificationQueue/{notifId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    // SCHOOL NOTIFICATIONS (May need school isolation - check your needs)
+    match /school_notifications/{notifId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    // ============================================
+    // DEFAULT DENY ALL OTHERS
+    // ============================================
+    
+    // Lock down everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

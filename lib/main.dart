@@ -12,6 +12,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'firebase_options.dart';
 import 'services/dynamic_firebase_options.dart';
+import 'services/school_context.dart';
+import 'services/background_cache_service.dart';
 import 'announcements_page.dart';
 import 'admin_home_page.dart';
 import 'admin_add_user_page.dart';
@@ -241,50 +243,56 @@ void backgroundTaskDispatcher() async {
 }
 
 void main() async {
+  final startupStopwatch = Stopwatch()..start();
+  print('🚀 APP STARTUP STARTED at ${DateTime.now().toIso8601String()}');
+  
   WidgetsFlutterBinding.ensureInitialized();
+  print('✅ WidgetsFlutterBinding initialized - ${startupStopwatch.elapsedMilliseconds}ms');
   
-  // Initialize Firebase with dynamic configuration
-  // This will check Firestore for custom config, or use defaults from firebase_options.dart
+  // 🚀 Initialize Firebase with FAST startup (no network delays!)
+  // Uses cached config or defaults immediately, updates config in background
+  final firebaseStopwatch = Stopwatch()..start();
   await Firebase.initializeApp(
-    options: await DynamicFirebaseOptions.getOptions(),
+    options: await DynamicFirebaseOptions.getOptionsForStartup(),
   );
+  print('🔥 Firebase initialized - ${firebaseStopwatch.elapsedMilliseconds}ms (Total: ${startupStopwatch.elapsedMilliseconds}ms)');
   
-  // Optional: configure background downloader (no notifications here)
-  try {
-    await FileDownloader().configure();
-  } catch (_) {}
-  // Initialize Workmanager only on mobile platforms (not supported on web/desktop)
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
-    await Workmanager().initialize(backgroundTaskDispatcher, isInDebugMode: false);
-  }
+  // 🔥 Initialize SchoolContext - provides schoolId throughout the app
+  final schoolContextStopwatch = Stopwatch()..start();
+  await SchoolContext.initialize();
+  print('🏫 SchoolContext initialized - ${schoolContextStopwatch.elapsedMilliseconds}ms (Total: ${startupStopwatch.elapsedMilliseconds}ms)');
   
-  // For desktop testing: Start a timer-based cleanup checker (only works while app is running)
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
-                  defaultTargetPlatform == TargetPlatform.linux || 
-                  defaultTargetPlatform == TargetPlatform.macOS)) {
-    _startDesktopCleanupTimer();
-  }
-  // Register background handler for FCM
+  // Register background handler for FCM (lightweight - just handler registration)
+  final fcmStopwatch = Stopwatch()..start();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  // Initialize notifications without a user (login will set token later)
-  await NotificationService.instance.init(currentUserId: null);
-  // Ensure firstadmin exists once
-  try {
-    final users = FirebaseFirestore.instance.collection('users');
-    final adminQuery = await users.where('userId', isEqualTo: 'firstadmin').limit(1).get();
-    if (adminQuery.docs.isEmpty) {
-      await users.add({
-        'userId': 'firstadmin',
-        'password': '123',
-        'role': 'admin',
-        'name': 'School Admin',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-  } catch (_) {}
+  print('📱 FCM background handler registered - ${fcmStopwatch.elapsedMilliseconds}ms (Total: ${startupStopwatch.elapsedMilliseconds}ms)');
+  
+  // 🚀 DEFERRED: Heavy services will initialize after UI is shown
+  // - Workmanager initialization (mobile cleanup tasks)
+  // - Desktop cleanup timer 
+  // - Detailed notification setup
+  // - Background image precaching
+  // - First admin user check
+  // - Firebase config background update
+  
+  print('🎯 Starting UI - Total startup time: ${startupStopwatch.elapsedMilliseconds}ms');
   runApp(const MyApp());
+  print('🎉 runApp() completed - Total startup time: ${startupStopwatch.elapsedMilliseconds}ms');
 }
 
+/// Initialize Workmanager in the background (deferred from startup)
+/// This can be called after the UI is ready to avoid startup delays
+Future<void> initializeWorkmanagerInBackground() async {
+  try {
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || 
+                    defaultTargetPlatform == TargetPlatform.iOS)) {
+      await Workmanager().initialize(backgroundTaskDispatcher, isInDebugMode: false);
+      debugPrint('📱 Workmanager initialized in background');
+    }
+  } catch (e) {
+    debugPrint('⚠️ Error initializing Workmanager in background: $e');
+  }
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -407,8 +415,6 @@ class _SessionGate extends StatefulWidget {
 }
 
 class _SessionGateState extends State<_SessionGate> {
-  bool _isLoading = true;
-  String? _backgroundImagePath;
   
   @override
   void initState() {
@@ -417,25 +423,14 @@ class _SessionGateState extends State<_SessionGate> {
   }
 
   Future<void> _loadBackgroundAndDecide() async {
-    // Load background image first
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final localImagePath = '${appDir.path}/background_image.jpg';
-      final localImageFile = File(localImagePath);
-      
-      if (localImageFile.existsSync()) {
-        setState(() {
-          _backgroundImagePath = localImageFile.path;
-        });
-        debugPrint('✅ Background image loaded in SessionGate');
-      }
-    } catch (e) {
-      debugPrint('Failed to load background in SessionGate: $e');
-    }
+    final sessionStopwatch = Stopwatch()..start();
+    print('🔍 SessionGate: Starting FAST session check at ${DateTime.now().toIso8601String()}');
     
-    // 🚀 Use cached session check (INSTANT on second launch!)
+    // 🚀 ONLY check session data - everything else happens in background!
+    final sessionCheckStopwatch = Stopwatch()..start();
     final userId = await DynamicFirebaseOptions.getSessionUserId();
     final role = await DynamicFirebaseOptions.getSessionRole();
+    print('👤 SessionGate: Session check completed - ${sessionCheckStopwatch.elapsedMilliseconds}ms');
     
     // Mark that app has been launched (only for first-time check)
     final prefs = await SharedPreferences.getInstance();
@@ -448,16 +443,13 @@ class _SessionGateState extends State<_SessionGate> {
     if (!mounted) return;
     
     if (userId != null && userId.isNotEmpty) {
-      // Ensure NotificationService knows the user and re-enables subscriptions if consented
-      try {
-        await NotificationService.instance.init(currentUserId: userId);
-        // Always attempt to enable and save token on session restore so per-user token delivery works.
-        await NotificationService.instance.enableForUser(userId);
-      } catch (_) {}
+      print('✅ SessionGate: User session found, navigating to admin page - Total SessionGate time: ${sessionStopwatch.elapsedMilliseconds}ms');
       
       // All users land on Current Page (admin and non-admin). Admin-only actions are hidden for non-admins.
+      // ALL heavy operations (notifications, background images, cache) happen AFTER UI loads!
       Navigator.pushReplacementNamed(context, '/admin', arguments: {'userId': userId, 'role': role ?? 'user'});
     } else {
+      print('🔐 SessionGate: No session found, navigating to auth - Total SessionGate time: ${sessionStopwatch.elapsedMilliseconds}ms');
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthChoicePage()));
     }
   }
@@ -466,23 +458,16 @@ class _SessionGateState extends State<_SessionGate> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: _backgroundImagePath != null
-            ? BoxDecoration(
-                image: DecorationImage(
-                  image: FileImage(File(_backgroundImagePath!)),
-                  fit: BoxFit.cover,
-                ),
-              )
-            : const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF667eea),
-                    Color(0xFF764ba2),
-                  ],
-                ),
-              ),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF667eea),
+              Color(0xFF764ba2),
+            ],
+          ),
+        ),
         child: const Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),

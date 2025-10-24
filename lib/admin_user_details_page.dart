@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'services/school_context.dart';
 
 class AdminUserDetailsPage extends StatefulWidget {
   final String userRefPath;
@@ -37,8 +38,8 @@ class _AdminUserDetailsPageState extends State<AdminUserDetailsPage> {
     setState(() => _loadingOptions = true);
     final db = FirebaseFirestore.instance;
     try {
-      final classesSnap = await db.collection('classes').orderBy('order', descending: false).get().catchError((_) async => await db.collection('classes').get());
-      final subjectsSnap = await db.collection('subjects').orderBy('order', descending: false).get().catchError((_) async => await db.collection('subjects').get());
+      final classesSnap = await db.collection('classes').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).orderBy('order', descending: false).get().catchError((_) async => await db.collection('classes').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).get());
+      final subjectsSnap = await db.collection('subjects').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).orderBy('order', descending: false).get().catchError((_) async => await db.collection('subjects').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).get());
       final classes = classesSnap.docs
           .map((d) => (d.data()['name'] as String?)?.trim())
           .whereType<String>()

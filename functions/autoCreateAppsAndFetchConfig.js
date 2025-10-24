@@ -106,14 +106,30 @@ exports.autoCreateAppsAndFetchConfig = functions.https.onRequest((req, res) => {
           });
 
           if (keysResponse.data.keys && keysResponse.data.keys.length > 0) {
+            // Get the first key and fetch its string value
             const firstKey = keysResponse.data.keys[0];
-            // Extract the key value from the name
-            // Format: projects/PROJECT_NUMBER/locations/global/keys/KEY_VALUE
-            const keyName = firstKey.name;
-            apiKey = keyName.split('/').pop();
-            console.log(`✅ API Key found from API Keys service: ${apiKey.substring(0, 10)}...`);
+            console.log(`🔍 Found key resource: ${firstKey.name}`);
+            
+            // Get the key string using getKeyString method
+            try {
+              const keyStringResponse = await apiKeysService.projects.locations.keys.getKeyString({
+                name: firstKey.name
+              });
+              
+              if (keyStringResponse.data.keyString) {
+                apiKey = keyStringResponse.data.keyString;
+                console.log(`✅ API Key found from API Keys service: ${apiKey.substring(0, 10)}...`);
+              } else {
+                console.log('⚠️ Key string not available in response');
+                apiKeyMessage = 'Could not fetch API key automatically. Please add it manually from Firebase Console.';
+              }
+            } catch (keyStringError) {
+              console.log(`⚠️ Error fetching key string: ${keyStringError.message}`);
+              apiKeyMessage = 'Could not fetch API key automatically. Please add it manually from Firebase Console.';
+            }
           } else {
             console.log('⚠️ No API keys found in API Keys service');
+            apiKeyMessage = 'No API keys found. Please create an API key in Google Cloud Console.';
           }
         } catch (error) {
           console.log(`⚠️ Method 2 failed: ${error.message}`);

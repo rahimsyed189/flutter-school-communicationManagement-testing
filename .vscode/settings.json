@@ -1,0 +1,25 @@
+{
+    "dart.flutterSdkPath": null,
+    "dart.lineLength": 120,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.rulers": [
+        120
+    ],
+    "files.exclude": {
+        "**/.dart_tool": true,
+        "**/.packages": true,
+        "**/build": true
+    },
+    "[dart]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true,
+        "editor.selectionHighlight": false,
+        "editor.suggest.snippetsPreventQuickSuggestions": false,
+        "editor.suggestSelection": "first",
+        "editor.tabCompletion": "onlySnippets",
+        "editor.wordBasedSuggestions": "off"
+    },
+    "dart.debugExternalPackageLibraries": false,
+    "dart.debugSdkLibraries": false
+}

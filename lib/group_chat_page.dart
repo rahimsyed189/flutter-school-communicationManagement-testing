@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'notification_service.dart';
 import 'dart:async';
+import 'services/school_context.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GroupChatPage extends StatefulWidget {
   final String groupId;
@@ -31,9 +34,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
   DocumentReference<Map<String, dynamic>>? _selectedRef;
   OverlayEntry? _reactionsOverlay;
 
+  // Background image settings
+  String? _backgroundImageUrl;
+  double _imageOpacity = 0.20;
+  Color _gradientColor1 = const Color(0xFF667eea);
+  Color _gradientColor2 = const Color(0xFF764ba2);
+
   @override
   void initState() {
     super.initState();
+    _loadBackgroundSettings(); // Load background image
     _groupStream = FirebaseFirestore.instance.collection('groups').doc(widget.groupId).snapshots();
     _groupSub = _groupStream!.listen((doc) {
       final data = doc.data();
@@ -48,6 +58,118 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // ignore: unawaited_futures
   NotificationService.instance.subscribeToGroup(widget.groupId);
     });
+  }
+
+  Future<void> _loadBackgroundSettings() async {
+    try {
+      final schoolId = SchoolContext.currentSchoolId;
+      
+      // Load from cache first (instant display)
+      final prefs = await SharedPreferences.getInstance();
+      String? cachedUrl = prefs.getString('background_url_$schoolId');
+      final cachedOpacity = prefs.getDouble('background_opacity_$schoolId');
+      final cachedColor1 = prefs.getInt('background_color1_$schoolId');
+      final cachedColor2 = prefs.getInt('background_color2_$schoolId');
+      
+      // Fix common URL issues (double colon, double slash)
+      if (cachedUrl != null) {
+        cachedUrl = cachedUrl.replaceAll('https:://', 'https://').replaceAll('http:://', 'http://');
+        if (cachedUrl != prefs.getString('background_url_$schoolId')) {
+          await prefs.setString('background_url_$schoolId', cachedUrl);
+        }
+      }
+      
+      if (cachedUrl != null) {
+        _backgroundImageUrl = cachedUrl;
+      }
+      if (cachedOpacity != null) {
+        _imageOpacity = cachedOpacity;
+      }
+      if (cachedColor1 != null) {
+        _gradientColor1 = Color(cachedColor1);
+      }
+      if (cachedColor2 != null) {
+        _gradientColor2 = Color(cachedColor2);
+      }
+      
+      if (mounted) setState(() {}); // Show cached data immediately
+      
+      // Then load from Firestore (to get latest)
+      final bgDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background')
+          .get();
+      
+      if (bgDoc.exists && bgDoc.data()?['imageUrl'] != null) {
+        String firestoreUrl = bgDoc.data()!['imageUrl'];
+        
+        // Fix common URL issues
+        firestoreUrl = firestoreUrl.replaceAll('https:://', 'https://').replaceAll('http:://', 'http://');
+        
+        _backgroundImageUrl = firestoreUrl;
+        
+        // Update cache if changed
+        if (cachedUrl != firestoreUrl) {
+          await prefs.setString('background_url_$schoolId', firestoreUrl);
+        }
+        
+        // If URL was bad in Firestore, fix it
+        if (firestoreUrl != bgDoc.data()!['imageUrl']) {
+          await FirebaseFirestore.instance
+              .collection('schools')
+              .doc(schoolId)
+              .collection('config')
+              .doc('background')
+              .update({'imageUrl': firestoreUrl});
+        }
+      }
+      
+      // Load opacity
+      final opacityDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background_image_opacity')
+          .get();
+      
+      if (opacityDoc.exists) {
+        final firestoreOpacity = opacityDoc.data()?['opacity'] ?? 0.20;
+        _imageOpacity = firestoreOpacity;
+        
+        // Update cache
+        if (cachedOpacity != firestoreOpacity) {
+          await prefs.setDouble('background_opacity_$schoolId', firestoreOpacity);
+        }
+      }
+      
+      // Load gradient colors
+      final gradientDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background_gradient')
+          .get();
+      
+      if (gradientDoc.exists) {
+        final data = gradientDoc.data()!;
+        final color1 = Color(data['color1'] ?? 0xFF667eea);
+        final color2 = Color(data['color2'] ?? 0xFF764ba2);
+        _gradientColor1 = color1;
+        _gradientColor2 = color2;
+        
+        // Update cache
+        if (cachedColor1 != color1.value || cachedColor2 != color2.value) {
+          await prefs.setInt('background_color1_$schoolId', color1.value);
+          await prefs.setInt('background_color2_$schoolId', color2.value);
+        }
+      }
+      
+      if (mounted) setState(() {}); // Update with latest data
+    } catch (e) {
+      debugPrint('Failed to load background settings: $e');
+    }
   }
 
   Future<void> _fetchMemberNames(List<String> ids) async {
@@ -214,10 +336,44 @@ class _GroupChatPageState extends State<GroupChatPage> {
         }
         return true;
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: _selectionActive ? const Text('1 selected') : Text(widget.groupName),
-          leading: _selectionActive ? IconButton(icon: const Icon(Icons.close), onPressed: _exitSelection) : null,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_gradientColor1, _gradientColor2],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: _backgroundImageUrl != null
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: _imageOpacity,
+                      child: CachedNetworkImage(
+                        imageUrl: _backgroundImageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(),
+                        errorWidget: (context, url, error) => Container(),
+                      ),
+                    ),
+                  ),
+                  _buildScaffold(),
+                ],
+              )
+            : _buildScaffold(),
+      ),
+    );
+  }
+
+  Widget _buildScaffold() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: _selectionActive ? const Text('1 selected') : Text(widget.groupName),
+        leading: _selectionActive ? IconButton(icon: const Icon(Icons.close), onPressed: _exitSelection) : null,
           actions: [
             if (_selectionActive) ...[
               PopupMenuButton<String>(
@@ -541,8 +697,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
             )
           ],
         ),
-      ),
-    );
+      );
   }
 
   @override

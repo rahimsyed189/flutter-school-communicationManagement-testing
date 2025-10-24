@@ -193,6 +193,188 @@ class DynamicFirebaseOptions {
     return _cachedOptions!;
   }
   
+  /// Get Firebase options for FAST startup (no network calls)
+  /// Returns cached config or defaults immediately, updates config in background
+  static Future<FirebaseOptions> getOptionsForStartup() async {
+    // Return cached options if available in memory (INSTANT)
+    if (_cachedOptions != null) {
+      debugPrint('⚡ Using in-memory cached Firebase config (INSTANT)');
+      return _cachedOptions!;
+    }
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check if using default configuration
+      final useDefault = prefs.getBool('use_default_firebase') ?? false;
+      if (useDefault) {
+        _cachedOptions = DefaultFirebaseOptions.currentPlatform;
+        debugPrint('✅ Using default Firebase configuration (user preference - FAST)');
+        return _cachedOptions!;
+      }
+      
+      // Determine current platform
+      String platform;
+      if (kIsWeb) {
+        platform = 'web';
+      } else {
+        switch (defaultTargetPlatform) {
+          case TargetPlatform.android:
+            platform = 'android';
+            break;
+          case TargetPlatform.iOS:
+            platform = 'ios';
+            break;
+          case TargetPlatform.macOS:
+            platform = 'macos';
+            break;
+          case TargetPlatform.windows:
+            platform = 'windows';
+            break;
+          default:
+            platform = 'web';
+        }
+      }
+      
+      // PRIORITY 1: Check local storage for cached Firebase config (FAST - No network!)
+      final cachedConfigJson = prefs.getString('firebase_config_cached_$platform');
+      if (cachedConfigJson != null && cachedConfigJson.isNotEmpty) {
+        try {
+          final cachedData = jsonDecode(cachedConfigJson) as Map<String, dynamic>;
+          
+          _cachedOptions = FirebaseOptions(
+            apiKey: cachedData['apiKey'] ?? '',
+            appId: cachedData['appId'] ?? '',
+            messagingSenderId: cachedData['messagingSenderId'] ?? '',
+            projectId: cachedData['projectId'] ?? '',
+            authDomain: cachedData['authDomain'],
+            databaseURL: cachedData['databaseURL'],
+            storageBucket: cachedData['storageBucket'],
+            measurementId: cachedData['measurementId'],
+            trackingId: cachedData['trackingId'],
+            deepLinkURLScheme: cachedData['deepLinkURLScheme'],
+            androidClientId: cachedData['androidClientId'],
+            iosClientId: cachedData['iosClientId'],
+            iosBundleId: cachedData['iosBundleId'],
+            appGroupId: cachedData['appGroupId'],
+          );
+          
+          debugPrint('⚡ Using cached Firebase config from local storage (FAST STARTUP) for $platform');
+          return _cachedOptions!;
+        } catch (e) {
+          debugPrint('⚠️ Error loading cached config: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error in fast Firebase options loading: $e');
+    }
+    
+    // PRIORITY 2: Fallback to defaults (INSTANT - No network calls during startup!)
+    _cachedOptions = DefaultFirebaseOptions.currentPlatform;
+    debugPrint('🚀 Using default Firebase configuration for FAST STARTUP (config will update in background)');
+    return _cachedOptions!;
+  }
+  
+  /// Update Firebase configuration in background (after startup)
+  /// This checks Firestore for custom configs without blocking startup
+  static Future<void> updateConfigInBackground() async {
+    debugPrint('🔄 Updating Firebase config in background...');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Skip if using default configuration by choice
+      final useDefault = prefs.getBool('use_default_firebase') ?? false;
+      if (useDefault) {
+        debugPrint('✅ Skipping background config update (using defaults by choice)');
+        return;
+      }
+      
+      // Determine current platform
+      String platform;
+      if (kIsWeb) {
+        platform = 'web';
+      } else {
+        switch (defaultTargetPlatform) {
+          case TargetPlatform.android:
+            platform = 'android';
+            break;
+          case TargetPlatform.iOS:
+            platform = 'ios';
+            break;
+          case TargetPlatform.macOS:
+            platform = 'macos';
+            break;
+          case TargetPlatform.windows:
+            platform = 'windows';
+            break;
+          default:
+            platform = 'web';
+        }
+      }
+      
+      // Check for school-specific config first
+      final schoolKey = prefs.getString('school_key');
+      if (schoolKey != null && schoolKey.isNotEmpty) {
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('school_registrations')
+              .doc(schoolKey)
+              .get();
+          
+          if (doc.exists) {
+            final data = doc.data()!;
+            
+            if (data.containsKey('firebaseConfig')) {
+              final firebaseConfig = data['firebaseConfig'] as Map<String, dynamic>;
+              if (firebaseConfig.containsKey(platform)) {
+                final platformData = firebaseConfig[platform] as Map<String, dynamic>;
+                
+                // Save to local storage for next startup
+                await prefs.setString('firebase_config_cached_$platform', jsonEncode(platformData));
+                
+                debugPrint('✅ Background: Updated school-specific Firebase config cache for $platform');
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Background: Error loading school Firebase config: $e');
+        }
+      }
+      
+      // Check for global config as fallback
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('app_config')
+            .doc('firebase_config')
+            .get();
+        
+        if (doc.exists) {
+          final data = doc.data()!;
+          final useCustomConfig = data['useCustomConfig'] ?? false;
+          
+          if (useCustomConfig && data.containsKey(platform)) {
+            final platformData = data[platform] as Map<String, dynamic>;
+            
+            // Save to local storage for next startup
+            await prefs.setString('firebase_config_cached_$platform', jsonEncode(platformData));
+            
+            debugPrint('✅ Background: Updated global Firebase config cache for $platform');
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Background: Error loading global Firebase config: $e');
+      }
+      
+      debugPrint('🔄 Background: No custom Firebase config found, using defaults');
+      
+    } catch (e) {
+      debugPrint('⚠️ Background: Error updating Firebase config: $e');
+    }
+  }
+  
   /// Clear cached options (useful after configuration changes)
   static Future<void> clearCache() async {
     _cachedOptions = null;

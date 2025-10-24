@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/school_context.dart';
 
 class AdminRemoveUserPage extends StatefulWidget {
   final String currentUserId;
@@ -15,7 +16,7 @@ class _AdminRemoveUserPageState extends State<AdminRemoveUserPage> {
   Future<void> _remove() async {
     final id = _userIdController.text.trim();
     if (id.isEmpty) return;
-    final q = await FirebaseFirestore.instance.collection('users').where('userId', isEqualTo: id).get();
+    final q = await FirebaseFirestore.instance.collection('users').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).where('userId', isEqualTo: id).get();
     for (final d in q.docs) {
       await d.reference.delete();
     }

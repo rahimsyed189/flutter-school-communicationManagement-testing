@@ -3,8 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/dynamic_firebase_options.dart';
-import 'school_registration_page.dart';
-import 'school_registration_wizard_page.dart';
+import 'school_registration_choice_page.dart';
 
 class SchoolKeyEntryPage extends StatefulWidget {
   const SchoolKeyEntryPage({Key? key}) : super(key: key);
@@ -38,7 +37,7 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
 
       if (!doc.exists) {
         setState(() {
-          _errorMessage = 'Invalid School Key. Please check and try again.';
+          _errorMessage = 'Invalid School ID. Please check and try again.';
           _isLoading = false;
         });
         return;
@@ -49,7 +48,7 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
       // Check if school is active
       if (data['isActive'] != true) {
         setState(() {
-          _errorMessage = 'This school key has been deactivated. Contact your admin.';
+          _errorMessage = 'This school ID has been deactivated. Contact your admin.';
           _isLoading = false;
         });
         return;
@@ -122,12 +121,15 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
   Future<void> _navigateToRegistration() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const SchoolRegistrationWizardPage()),
+      MaterialPageRoute(builder: (_) => const SchoolRegistrationChoicePage()),
     );
 
     if (result != null && result is String) {
-      // School key was generated, auto-fill it
+      // School key was generated, auto-fill it and validate automatically
       _keyController.text = result;
+      
+      // Automatically validate and save the school key
+      await _validateAndSaveKey();
     }
   }
 
@@ -189,7 +191,7 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
                         const SizedBox(height: 8),
                         
                         const Text(
-                          'Enter your School Firebase Key',
+                          'Enter your School ID',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey,
@@ -203,7 +205,7 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
                         TextFormField(
                           controller: _keyController,
                           decoration: InputDecoration(
-                            labelText: 'School Firebase Key',
+                            labelText: 'School ID',
                             hintText: 'SCHOOL_XXXXX_123456',
                             prefixIcon: const Icon(Icons.vpn_key),
                             border: const OutlineInputBorder(),
@@ -220,10 +222,10 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
                           textCapitalization: TextCapitalization.characters,
                           validator: (value) {
                             if (value?.isEmpty ?? true) {
-                              return 'Please enter your school key';
+                              return 'Please enter your school ID';
                             }
                             if (!value!.startsWith('SCHOOL_')) {
-                              return 'Invalid key format';
+                              return 'Invalid ID format';
                             }
                             return null;
                           },
@@ -307,22 +309,10 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
                           child: OutlinedButton.icon(
                             onPressed: _navigateToRegistration,
                             icon: const Icon(Icons.add_circle_outline),
-                            label: const Text('Register New School'),
+                            label: const Text('Create New School'),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        // Use Default Button
-                        TextButton.icon(
-                          onPressed: _useDefaultConfiguration,
-                          icon: const Icon(Icons.settings, size: 18),
-                          label: const Text('Use Default Configuration'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.grey.shade700,
                           ),
                         ),
                         
@@ -357,9 +347,8 @@ class _SchoolKeyEntryPageState extends State<SchoolKeyEntryPage> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '• Get the key from your school admin\n'
-                                '• Register new school if you\'re an admin\n'
-                                '• Use default config for testing',
+                                '• Get your School ID from your school admin\n'
+                                '• Register a new school if you\'re setting up for the first time',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.blue.shade700,

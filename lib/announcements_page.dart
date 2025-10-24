@@ -9,12 +9,16 @@ import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'services/dynamic_firebase_options.dart';
+import 'services/school_context.dart';
 import 'package:minio/minio.dart';
 import 'fast_download_manager.dart';
 import 'dart:io';
 import 'dart:ui';
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:background_downloader/background_downloader.dart';
+import 'services/download_service.dart';
 import 'download_state.dart';
 import 'widgets/r2_video_player.dart';
 import 'widgets/download_all_overlay.dart';
@@ -28,6 +32,8 @@ import 'widgets/template_announcement_cards.dart';
 import 'widgets/school_holiday_card.dart';
 import 'widgets/ptm_announcement_card.dart';
 import 'widgets/custom_template_renderer.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'services/background_cache_service.dart';
 
 // Template styles for media display
 enum MediaTemplateStyle {
@@ -75,6 +81,22 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
   
   // Create a stable stream to prevent unnecessary rebuilds
   late final Stream<QuerySnapshot> _announcementsStream;
+  
+  // Cache the last snapshot to prevent spinner flicker on rebuilds
+  QuerySnapshot? _lastAnnouncementsSnapshot;
+
+  // Background image settings
+  String? _backgroundImageUrl;
+  double _imageOpacity = 0.20;
+  Color _gradientColor1 = const Color(0xFF667eea);
+  Color _gradientColor2 = const Color(0xFF764ba2);
+
+  // R2 configuration for presigned URLs
+  String? _r2AccountId;
+  String? _r2AccessKeyId;
+  String? _r2SecretAccessKey;
+  String? _r2BucketName;
+  bool _r2Configured = false;
 
   Future<void> _setReaction(String emoji) async {
     final ref = _selectedRef;
@@ -174,7 +196,13 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
 
   Future<String> _getSenderName(String senderId) async {
     if (senderId == 'firstadmin') return 'School Admin';
-    final userDoc = await FirebaseFirestore.instance.collection('users').where('userId', isEqualTo: senderId).limit(1).get();
+    // 🔥 Filter by schoolId
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+        .where('userId', isEqualTo: senderId)
+        .limit(1)
+        .get();
     if (userDoc.docs.isNotEmpty && userDoc.docs.first.data().containsKey('name')) {
       return userDoc.docs.first['name'] ?? senderId;
     }
@@ -186,6 +214,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
     if (text.isEmpty) return;
     final senderName = await _getSenderName(widget.currentUserId);
     await FirebaseFirestore.instance.collection('communications').add({
+      'schoolId': SchoolContext.currentSchoolId,  // 🔥 ADD schoolId
       'message': text,
       'senderId': widget.currentUserId,
       'senderRole': widget.currentUserRole,
@@ -207,12 +236,23 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
     _loadPlaybackPreference();
     _hydrateDownloads();
     _maybeRequestAndroidNotificationPermission();
+    _loadBackgroundSettings(); // Load background image
     
     // Initialize stable stream to prevent rebuilds on setState
+    // 🔥 Filter announcements by schoolId
     _announcementsStream = FirebaseFirestore.instance
         .collection('communications')
+        .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
         .orderBy('timestamp', descending: true)
         .snapshots();
+    
+    // Pre-cache first snapshot for instant display (WhatsApp approach)
+    _announcementsStream.first.then((snapshot) {
+      if (mounted) {
+        _lastAnnouncementsSnapshot = snapshot;
+        debugPrint('✅ Pre-cached announcements: ${snapshot.docs.length} items');
+      }
+    });
     
     // Automatic cleanup for ALL users (runs on app startup)
     Future.delayed(const Duration(seconds: 3), () async {
@@ -230,6 +270,201 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
         await Permission.notification.request();
       }
     } catch (_) {}
+  }
+
+  Future<void> _loadBackgroundSettings() async {
+    try {
+      final schoolId = SchoolContext.currentSchoolId;
+      debugPrint('🎨 Loading background for school: $schoolId');
+      
+      // Load from cache first (instant display)
+      final prefs = await SharedPreferences.getInstance();
+      String? cachedUrl = prefs.getString('background_url_$schoolId');
+      final cachedOpacity = prefs.getDouble('background_opacity_$schoolId');
+      final cachedColor1 = prefs.getInt('background_color1_$schoolId');
+      final cachedColor2 = prefs.getInt('background_color2_$schoolId');
+      
+      // Fix common URL issues (double colon, double slash)
+      if (cachedUrl != null) {
+        cachedUrl = cachedUrl.replaceAll('https:://', 'https://').replaceAll('http:://', 'http://');
+        if (cachedUrl != prefs.getString('background_url_$schoolId')) {
+          debugPrint('� Fixed cached URL: $cachedUrl');
+          await prefs.setString('background_url_$schoolId', cachedUrl);
+        }
+      }
+      
+      debugPrint('�📦 Cache - URL: $cachedUrl, Opacity: $cachedOpacity');
+      
+      if (cachedUrl != null) {
+        _backgroundImageUrl = cachedUrl;
+      }
+      if (cachedOpacity != null) {
+        _imageOpacity = cachedOpacity;
+      }
+      if (cachedColor1 != null) {
+        _gradientColor1 = Color(cachedColor1);
+      }
+      if (cachedColor2 != null) {
+        _gradientColor2 = Color(cachedColor2);
+      }
+      
+      // Get directory and file paths
+      final dir = await getApplicationDocumentsDirectory();
+      final cachedFilePath = '${dir.path}/backgrounds/bg_$schoolId.jpg';
+      final cachedFile = File(cachedFilePath);
+      
+      // Precache background into Flutter's ImageCache (WhatsApp approach - GPU memory!)
+      if (cachedFile.existsSync()) {
+        if (!BackgroundCacheService().isPrecached(schoolId) && mounted) {
+          await BackgroundCacheService().precacheBackground(context, schoolId);
+        }
+        _backgroundImageUrl = 'precached'; // Flag to indicate background ready
+        
+        // Show immediately
+        if (mounted) {
+          setState(() {});
+          debugPrint('✨ Background ready (precached in GPU)!');
+        }
+      }
+      
+      // Then load from Firestore (to get latest)
+      debugPrint('🔥 Fetching from Firestore...');
+      final bgDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background')
+          .get();
+      
+      debugPrint('🔥 Background doc exists: ${bgDoc.exists}');
+      if (bgDoc.exists && bgDoc.data()?['objectKey'] != null) {
+        final objectKey = bgDoc.data()!['objectKey'] as String;
+        final cachedObjectKey = prefs.getString('background_key_$schoolId');
+        
+        debugPrint('🔑 Firestore key: $objectKey');
+        debugPrint('📦 Cached key: $cachedObjectKey');
+        
+        // Only download if background changed OR file doesn't exist
+        if (objectKey != cachedObjectKey || !cachedFile.existsSync()) {
+          debugPrint('🆕 Background changed or missing, downloading...');
+          
+          // Generate presigned URL
+          await _ensureR2Configured();
+        if (_r2BucketName != null) {
+          final minio = Minio(
+            endPoint: '$_r2AccountId.r2.cloudflarestorage.com',
+            accessKey: _r2AccessKeyId!,
+            secretKey: _r2SecretAccessKey!,
+            useSSL: true,
+          );
+          
+          final presignedUrl = await minio.presignedGetObject(_r2BucketName!, objectKey, expires: 3600);
+          debugPrint('� Presigned URL generated');
+          
+          // Download and save to device storage
+          try {
+            final response = await http.get(Uri.parse(presignedUrl));
+            
+            if (response.statusCode == 200) {
+              await Directory('${dir.path}/backgrounds').create(recursive: true);
+              await cachedFile.writeAsBytes(response.bodyBytes);
+              debugPrint('💾 Saved to device: ${cachedFile.lengthSync()} bytes');
+              
+              // Precache into Flutter's ImageCache (WhatsApp approach!)
+              if (mounted) {
+                await BackgroundCacheService().precacheBackground(context, schoolId);
+                debugPrint('🚀 New background precached into GPU memory!');
+              }
+              
+              _backgroundImageUrl = 'precached';
+            } else {
+              _backgroundImageUrl = presignedUrl;
+            }
+          } catch (e) {
+            debugPrint('❌ Download error: $e');
+            _backgroundImageUrl = presignedUrl;
+          }
+          
+            // Cache the object key
+            await prefs.setString('background_key_$schoolId', objectKey);
+            debugPrint('💾 Cached object key');
+          }
+        } else {
+          debugPrint('✅ Background unchanged, using cached file');
+        }
+      } else {
+        debugPrint('⚠️ No background image found in Firestore');
+      }
+      
+      // Load opacity
+      final opacityDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background_image_opacity')
+          .get();
+      
+      if (opacityDoc.exists) {
+        final firestoreOpacity = opacityDoc.data()?['opacity'] ?? 0.20;
+        _imageOpacity = firestoreOpacity;
+        
+        // Update cache
+        if (cachedOpacity != firestoreOpacity) {
+          await prefs.setDouble('background_opacity_$schoolId', firestoreOpacity);
+        }
+      }
+      
+      // Load gradient colors
+      final gradientDoc = await FirebaseFirestore.instance
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background_gradient')
+          .get();
+      
+      if (gradientDoc.exists) {
+        final data = gradientDoc.data()!;
+        final color1 = Color(data['color1'] ?? 0xFF667eea);
+        final color2 = Color(data['color2'] ?? 0xFF764ba2);
+        _gradientColor1 = color1;
+        _gradientColor2 = color2;
+        
+        // Update cache
+        if (cachedColor1 != color1.value || cachedColor2 != color2.value) {
+          await prefs.setInt('background_color1_$schoolId', color1.value);
+          await prefs.setInt('background_color2_$schoolId', color2.value);
+        }
+      }
+      
+      debugPrint('✅ Final background URL: $_backgroundImageUrl');
+      
+      // No need to call setState here if background was already shown from cache
+    } catch (e) {
+      debugPrint('❌ Failed to load background settings: $e');
+    }
+  }
+
+  Future<void> _ensureR2Configured() async {
+    if (_r2Configured) return;
+    
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('r2_settings')
+          .get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        _r2AccountId = data['accountId'] ?? '';
+        _r2AccessKeyId = data['accessKeyId'] ?? '';
+        _r2SecretAccessKey = data['secretAccessKey'] ?? '';
+        _r2BucketName = data['bucketName'] ?? '';
+        _r2Configured = true;
+        debugPrint('✅ R2 configuration loaded');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to load R2 configuration: $e');
+    }
   }
 
   Future<void> _loadPlaybackPreference() async {
@@ -509,7 +744,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
       _dlStatus[url] = TaskStatus.enqueued;
       _downloadProgress[url] = 0.0;
     });
-    FileDownloader().download(
+    DownloadService().download(
       task,
       onProgress: (progress) {
         if (!mounted) return;
@@ -522,7 +757,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
           String? movedPath;
           try {
             if (Platform.isAndroid) {
-              movedPath = await FileDownloader().moveToSharedStorage(task, SharedStorage.downloads);
+              movedPath = await DownloadService().moveToSharedStorage(task, SharedStorage.downloads);
             }
           } catch (_) {}
           final path = movedPath ?? await task.filePath();
@@ -554,9 +789,9 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
     final status = _dlStatus[url];
     try {
       if (status == TaskStatus.running) {
-        await FileDownloader().pause(task);
+        await DownloadService().pause(task);
       } else if (status == TaskStatus.paused) {
-        await FileDownloader().resume(task);
+        await DownloadService().resume(task);
       }
     } catch (_) {}
   }
@@ -565,7 +800,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
     final task = _dlTask[url];
     if (task == null) return;
     try {
-      await FileDownloader().cancelTasksWithIds([task.taskId]);
+      await DownloadService().cancelTasksWithIds([task.taskId]);
     } catch (_) {}
   }
 
@@ -582,6 +817,8 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('🖼️ Building announcements page - Background URL: ${_backgroundImageUrl != null ? "loaded" : "null"}, Opacity: $_imageOpacity');
+    
     return WillPopScope(
       onWillPop: () async {
         if (_selectionActive) {
@@ -590,12 +827,69 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
         }
         return true;
       },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF90CAF9), // Darker light blue
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF90CAF9), // Same darker blue for AppBar
-          title: _selectionActive ? const Text('1 selected') : const Text('Announcements'),
-          leading: _selectionActive ? IconButton(icon: const Icon(Icons.close), onPressed: _exitSelection) : null,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_gradientColor1, _gradientColor2],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: _backgroundImageUrl != null && _backgroundImageUrl!.isNotEmpty
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: _imageOpacity,
+                      child: BackgroundCacheService().hasBackground(SchoolContext.currentSchoolId)
+                        ? Image.file(
+                            File(BackgroundCacheService().getBackgroundPath(SchoolContext.currentSchoolId)!),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true, // Image already precached in Flutter's ImageCache (GPU) - INSTANT!
+                          )
+                        : _backgroundImageUrl != null && _backgroundImageUrl!.startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: _backgroundImageUrl!,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) {
+                                debugPrint('🔄 Loading background image...');
+                                return Container();
+                              },
+                              errorWidget: (context, url, error) {
+                                debugPrint('❌ Error loading background: $error');
+                                return Container();
+                              },
+                              fadeInDuration: const Duration(milliseconds: 500),
+                              fadeOutDuration: const Duration(milliseconds: 300),
+                            )
+                          : _backgroundImageUrl != null
+                            ? Image.file(
+                                File(_backgroundImageUrl!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  debugPrint('❌ Error loading local background: $error');
+                                  return Container();
+                                },
+                              )
+                            : Container(),
+                    ),
+                  ),
+                  _buildScaffold(),
+                ],
+              )
+            : _buildScaffold(),
+      ),
+    );
+  }
+
+  Widget _buildScaffold() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: _selectionActive ? const Text('1 selected') : const Text('Announcements'),
+        leading: _selectionActive ? IconButton(icon: const Icon(Icons.close), onPressed: _exitSelection) : null,
           actions: [
             if (_selectionActive)
               PopupMenuButton<String>(
@@ -728,13 +1022,28 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _announcementsStream,
                 builder: (context, snapshot) {
+                  debugPrint('📋 StreamBuilder state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, hasError: ${snapshot.hasError}');
+                  
                   if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                  
+                  // Cache the snapshot when we have data
+                  if (snapshot.hasData) {
+                    _lastAnnouncementsSnapshot = snapshot.data;
                   }
-                  final docs = snapshot.data?.docs ?? [];
+                  
+                  // Use cached data if available, even during waiting state
+                  final dataToUse = snapshot.hasData ? snapshot.data : _lastAnnouncementsSnapshot;
+                  
+                  // Show transparent container while loading - NO SPINNER
+                  if (dataToUse == null) {
+                    debugPrint('⏳ Loading announcements...');
+                    return Container(); // Transparent - no spinner blocking view
+                  }
+                  
+                  final docs = dataToUse.docs;
+                  debugPrint('📋 Announcements loaded: ${docs.length} items');
                   if (docs.isEmpty) {
                     return const Center(child: Text('No announcements yet.'));
                   }
@@ -1861,8 +2170,8 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                 ),
               ),
             ),
-        ],
-      ),
+          ],
+        ),
         floatingActionButton: (widget.currentUserRole == 'admin' && !_showAnnouncementForm) 
             ? FloatingActionButton(
                 onPressed: () {
@@ -1877,8 +2186,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                 ),
               )
             : null,
-      ),
-    );
+      );
   }
 
   Widget _buildQuickActionItem({

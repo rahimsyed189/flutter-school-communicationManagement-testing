@@ -41,6 +41,18 @@
 				"$flutter"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build Release APK",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"build",
+				"apk",
+				"--release"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/dynamic_firebase_options.dart';
+import 'services/school_context.dart';
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -34,6 +35,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
+    _ensureSchoolContext();
     _applyPrefill();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadApplyToPage();
@@ -42,6 +44,13 @@ class _LoginPageState extends State<LoginPage> {
       _loadBackgroundImageUrl();
       _loadBackgroundGradient();
     });
+  }
+
+  // 🔥 Ensure SchoolContext is initialized before login
+  Future<void> _ensureSchoolContext() async {
+    if (!SchoolContext.hasSchool) {
+      await SchoolContext.initialize();
+    }
   }
 
   Future<void> _applyPrefill() async {
@@ -182,15 +191,19 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // If there's a pending registration with same phone, block login until approved (unless user already exists)
       try {
+        // 🔥 Filter registrations by schoolId
         final pending = await FirebaseFirestore.instance
             .collection('registrations')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .where('phone', isEqualTo: userId)
             .where('status', isEqualTo: 'pending')
             .limit(1)
             .get();
         if (pending.docs.isNotEmpty) {
+          // 🔥 Filter users by schoolId
           final existing = await FirebaseFirestore.instance
               .collection('users')
+              .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
               .where('userId', isEqualTo: userId)
               .limit(1)
               .get();
@@ -206,8 +219,10 @@ class _LoginPageState extends State<LoginPage> {
       } catch (_) {}
 
       // Fetch user by ID first to check reset status
+      // 🔥 Filter by schoolId to ensure user belongs to THIS school
       final userQuery = await FirebaseFirestore.instance
           .collection('users')
+          .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
           .where('userId', isEqualTo: userId)
           .limit(1)
           .get();
@@ -233,8 +248,10 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
         // reload user
+        // 🔥 Filter by schoolId
         final refreshed = await FirebaseFirestore.instance
             .collection('users')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .where('userId', isEqualTo: userData['userId'])
             .limit(1)
             .get();

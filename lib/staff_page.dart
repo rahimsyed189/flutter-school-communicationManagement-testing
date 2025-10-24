@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/school_context.dart';
 
 class StaffPage extends StatefulWidget {
   const StaffPage({Key? key}) : super(key: key);
@@ -36,6 +37,7 @@ class _StaffPageState extends State<StaffPage> {
 
     try {
       await FirebaseFirestore.instance.collection('staff').add({
+        'schoolId': SchoolContext.currentSchoolId,  // 🔥 ADD schoolId
         'name': _nameController.text.trim(),
         'employeeId': _employeeIdController.text.trim(),
         'department': _departmentController.text.trim(),
@@ -191,8 +193,10 @@ class _StaffPageState extends State<StaffPage> {
           // Staff List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
+              // 🔥 Filter staff by schoolId
               stream: FirebaseFirestore.instance
                   .collection('staff')
+                  .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {

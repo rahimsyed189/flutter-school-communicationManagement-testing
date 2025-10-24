@@ -488,112 +488,508 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
 
   // STEP 2: Firebase Project Selection
   Widget _buildFirebaseProjectStep() {
+    // Show centered logo and connect button if not yet connected
+    if (_userProjects.isEmpty && !_isLoadingProjects && _accessToken == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Firebase Logo - Smaller, Google-style
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orange.withOpacity(0.15),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.local_fire_department_rounded,
+                size: 32,
+                color: Colors.orange.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Connect to Firebase',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.15,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Link your Firebase project to get started',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadUserProjects,
+              icon: const Icon(Icons.cloud_outlined, size: 18),
+              label: const Text(
+                'Connect to Your Firebase',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade600,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                elevation: 2,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Show animated checklist after connection
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '🔥 Connect Firebase Project',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Select or verify your Firebase project',
-          style: TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 24),
-        
-        // Load Projects Button
-        if (_userProjects.isEmpty && !_isLoadingProjects)
-          ElevatedButton.icon(
-            onPressed: _loadUserProjects,
-            icon: const Icon(Icons.cloud_download),
-            label: const Text('Load My Firebase Projects'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        // Header with Firebase logo (moved to top after connection)
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.local_fire_department_rounded,
+                size: 20,
+                color: Colors.orange.shade600,
+              ),
             ),
-          ),
-        
-        if (_isLoadingProjects)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24.0),
-              child: CircularProgressIndicator(),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Connect Firebase Project',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  'Setting up your project...',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
             ),
-          ),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Checklist
+        _buildChecklistItem(
+          icon: Icons.account_circle,
+          title: 'Sign in to Google',
+          subtitle: _loggedInEmail ?? 'Authenticating...',
+          isCompleted: _accessToken != null,
+          isLoading: _isLoadingProjects && _accessToken == null,
+        ),
         
-        // Project Dropdown
+        _buildChecklistItem(
+          icon: Icons.cloud_sync,
+          title: 'Load Firebase Projects',
+          subtitle: _userProjects.isEmpty 
+              ? 'Fetching your projects...' 
+              : 'Found ${_userProjects.length} project(s)',
+          isCompleted: _userProjects.isNotEmpty,
+          isLoading: _isLoadingProjects,
+        ),
+        
+        // Project Selection Checklist Item
         if (_userProjects.isNotEmpty) ...[
-          DropdownButtonFormField<String>(
-            value: _selectedProjectId,
-            decoration: const InputDecoration(
-              labelText: 'Select Firebase Project',
-              prefixIcon: Icon(Icons.folder),
-              border: OutlineInputBorder(),
-            ),
-            items: _userProjects.map((project) {
-              return DropdownMenuItem<String>(
-                value: project['projectId'] as String?,
-                child: Text(project['displayName'] ?? project['projectId']),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedProjectId = value;
-                _projectIdController.text = value ?? '';
-              });
-              // Automatically verify and fetch config when project is selected
-              if (value != null && value.isNotEmpty) {
-                _verifyFirebaseProject();
-              }
-            },
+          _buildChecklistItem(
+            icon: Icons.folder_special,
+            title: 'Select Your Project',
+            subtitle: _selectedProjectId == null 
+                ? 'Choose a project from the list below' 
+                : 'Selected: $_selectedProjectId',
+            isCompleted: _selectedProjectId != null,
+            isLoading: false,
           ),
-          const SizedBox(height: 16),
+          
+          // Project List
+          if (_selectedProjectId == null) ...[
+            const SizedBox(height: 12),
+            Container(
+              margin: const EdgeInsets.only(left: 52),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: _userProjects.map((project) {
+                  final projectId = project['projectId'] as String;
+                  final displayName = project['displayName'] ?? projectId;
+                  
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedProjectId = projectId;
+                          _projectIdController.text = projectId;
+                        });
+                        _verifyFirebaseProject();
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.folder_outlined,
+                              color: Colors.blue.shade400,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    projectId,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.grey.shade400,
+                              size: 12,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
         ],
         
-        // Manual Project ID Input
-        TextFormField(
-          controller: _projectIdController,
-          decoration: const InputDecoration(
-            labelText: 'Or Enter Project ID Manually',
-            prefixIcon: Icon(Icons.vpn_key),
-            border: OutlineInputBorder(),
-            hintText: 'my-project-id',
-            helperText: 'Auto-verifies when you finish typing',
+        // Verification Checklist Item
+        if (_selectedProjectId != null) ...[
+          _buildChecklistItem(
+            icon: Icons.verified_user,
+            title: 'Verify Project & Fetch Config',
+            subtitle: _isVerifyingProject 
+                ? 'Checking billing and creating apps...'
+                : _billingInfo != null 
+                    ? 'Billing: ${_billingInfo!['billingPlan'] ?? 'Unknown'}'
+                    : 'Waiting to verify...',
+            isCompleted: _billingInfo != null && !_isVerifyingProject && !_apiKeyMissing,
+            isLoading: _isVerifyingProject,
           ),
-          onChanged: (value) {
-            setState(() => _selectedProjectId = value);
-            // Auto-verify after user stops typing (debounce)
-            if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-            _debounceTimer = Timer(const Duration(seconds: 1), () {
-              if (value.isNotEmpty) {
-                _verifyFirebaseProject();
-              }
-            });
-          },
-        ),
-        const SizedBox(height: 16),
-        
-        // Verify Button (now only shown for manual project ID entry)
-        if (_userProjects.isEmpty)
-          ElevatedButton.icon(
-            onPressed: _selectedProjectId != null && _selectedProjectId!.isNotEmpty
-                ? _verifyFirebaseProject
-                : null,
-            icon: const Icon(Icons.verified),
-            label: const Text('Verify & Auto-Configure'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          
+          // API Key Status Checklist Item (show if API keys couldn't be fetched)
+          if (_apiKeyMissing && !_isVerifyingProject) ...[
+            Container(
+              margin: const EdgeInsets.only(left: 48, top: 8, bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                border: Border.all(color: Colors.orange.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'API Keys API Not Enabled',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _apiKeyMessage ?? 'Could not fetch API keys automatically. Please enable the API Keys API.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 12),
+                  // Show the actual link
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 14, color: Colors.blue.shade700),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _openEnableApiKeysPage(),
+                            child: Text(
+                              'https://console.cloud.google.com/apis/library/apikeys.googleapis.com?project=$_selectedProjectId',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.blue.shade700,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openEnableApiKeysPage(),
+                          child: Icon(Icons.open_in_new, size: 14, color: Colors.blue.shade700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Click the link above to enable, then refresh',
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _verifyFirebaseProject,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: 'Retry fetching API keys',
+                        style: IconButton.styleFrom(
+                          foregroundColor: Colors.blue.shade700,
+                          backgroundColor: Colors.blue.shade50,
+                          padding: const EdgeInsets.all(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
+          
+          // Billing Warning (show if billing not enabled)
+          if (_billingInfo != null && _billingInfo!['billingEnabled'] == false && !_isVerifyingProject) ...[
+            Container(
+              margin: const EdgeInsets.only(left: 48, top: 8, bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                border: Border.all(color: Colors.orange.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Billing Not Enabled (Free Tier)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your project is on Spark (Free) plan. Upgrade to Blaze (Pay as you go) to use this school management system.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.card_giftcard, color: Colors.green.shade700, size: 14),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Good news: \$300 free credits for 90 days!',
+                            style: TextStyle(
+                              color: Colors.green.shade900,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 14, color: Colors.orange.shade700),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _openUpgradeToBlazePageBlaze(),
+                            child: Text(
+                              'https://console.firebase.google.com/project/$_selectedProjectId/usage/details',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.orange.shade700,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openUpgradeToBlazePageBlaze(),
+                          child: Icon(Icons.open_in_new, size: 14, color: Colors.orange.shade700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Click the link above to upgrade, then refresh',
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _verifyFirebaseProject,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: 'Check billing status again',
+                        style: IconButton.styleFrom(
+                          foregroundColor: Colors.orange.shade700,
+                          backgroundColor: Colors.orange.shade50,
+                          padding: const EdgeInsets.all(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
         
-        if (_isVerifyingProject)
-          const Padding(
-            padding: EdgeInsets.only(top: 16.0),
-            child: LinearProgressIndicator(),
-          ),
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 12),
         
-        // Billing Info Display
-        if (_billingInfo != null) ...[
+        // Manual Project ID Input (collapsed by default)
+        ExpansionTile(
+          leading: const Icon(Icons.edit_note, size: 20),
+          title: const Text('Enter Project ID Manually', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('If your project is not listed above', style: TextStyle(fontSize: 11)),
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _projectIdController,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      labelText: 'Project ID',
+                      labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                      prefixIcon: Icon(Icons.vpn_key, size: 20),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade400),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade400),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      isDense: true,
+                      hintText: 'my-project-id',
+                      helperText: 'Auto-verifies when you finish typing',
+                    ),
+                    onChanged: (value) {
+                      setState(() => _selectedProjectId = value);
+                      // Auto-verify after user stops typing (debounce)
+                      if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+                      _debounceTimer = Timer(const Duration(seconds: 1), () {
+                        if (value.isNotEmpty) {
+                          _verifyFirebaseProject();
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        
+        // Billing Info Display (only show when billing IS enabled or checking errors)
+        if (_billingInfo != null && (_billingInfo!['billingEnabled'] == true || _billingInfo!['billingCheckError'] != null)) ...[
           const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.all(16),
@@ -669,17 +1065,38 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () => _openEnableBillingApiPage(),
-                    icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text('Enable Billing API'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 14, color: Colors.blue.shade700),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _openEnableBillingApiPage(),
+                            child: Text(
+                              'https://console.developers.google.com/apis/api/cloudbilling.googleapis.com/overview?project=$_selectedProjectId',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.blue.shade700,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openEnableBillingApiPage(),
+                          child: Icon(Icons.open_in_new, size: 14, color: Colors.blue.shade700),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -741,17 +1158,38 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () => _openUpgradeToBlazePageBlaze(),
-                    icon: const Icon(Icons.upgrade, size: 18),
-                    label: const Text('Upgrade to Blaze Plan'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange.shade600,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 14, color: Colors.orange.shade700),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _openUpgradeToBlazePageBlaze(),
+                            child: Text(
+                              'https://console.firebase.google.com/project/$_selectedProjectId/usage/details',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.orange.shade700,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openUpgradeToBlazePageBlaze(),
+                          child: Icon(Icons.open_in_new, size: 14, color: Colors.orange.shade700),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -759,7 +1197,85 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
             ),
           ),
         ],
-      ],
+      ], // Closes Column's children array
+    ); // Closes Column widget
+  }
+
+  Widget _buildChecklistItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool isCompleted,
+    required bool isLoading,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status Icon
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: isCompleted 
+                  ? Colors.green.shade50 
+                  : isLoading 
+                      ? Colors.blue.shade50 
+                      : Colors.grey.shade100,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isCompleted 
+                    ? Colors.green.shade400 
+                    : isLoading 
+                        ? Colors.blue.shade400 
+                        : Colors.grey.shade300,
+                width: 1.5,
+              ),
+            ),
+            child: isLoading
+                ? Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+                    ),
+                  )
+                : Icon(
+                    isCompleted ? Icons.check_circle : icon,
+                    color: isCompleted 
+                        ? Colors.green.shade600 
+                        : Colors.grey.shade400,
+                    size: 20,
+                  ),
+          ),
+          const SizedBox(width: 12),
+          // Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: isCompleted ? Colors.green.shade900 : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -832,9 +1348,24 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         padding: const EdgeInsets.only(bottom: 16.0),
         child: TextFormField(
           controller: controllers[field],
+          style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             labelText: field,
-            border: const OutlineInputBorder(),
+            labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: BorderSide(color: Colors.grey.shade400),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: BorderSide(color: Colors.grey.shade400),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            isDense: true,
           ),
         ),
       );
@@ -1215,6 +1746,9 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
       print('🔍 Full verification result: $result');
       print('🔍 Config data: ${result['config']}');
       
+      // Track previous billing state
+      final wasBillingDisabled = _billingInfo != null && _billingInfo!['billingEnabled'] == false;
+      
       setState(() {
         _billingInfo = {
           'billingEnabled': result['billingEnabled'] ?? false,
@@ -1225,6 +1759,17 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         _apiKeyMessage = result['apiKeyMessage'];
         _isVerifyingProject = false;
       });
+      
+      // Show success message if billing was just enabled
+      if (wasBillingDisabled && result['billingEnabled'] == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Billing enabled! Plan: ${result['billingPlan'] ?? 'Blaze'}. You can now proceed.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
       
       // Auto-fill API keys if available
       if (result['config'] != null) {
@@ -1237,17 +1782,24 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         final iosApiKey = _firebaseControllers['ios']!['apiKey']!.text;
         
         if (webApiKey.isEmpty || androidApiKey.isEmpty || iosApiKey.isEmpty) {
-          print('⚠️ API keys are empty. Showing API key dialog...');
+          print('⚠️ API keys are empty. API Keys API may not be enabled...');
           setState(() => _apiKeyMissing = true);
-          
-          // Show dialog after a short delay to ensure UI is ready
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              _showApiKeyDialog();
-            }
-          });
+          // Don't show popup - user will see warning card in the UI
         } else {
+          print('✅ API keys fetched successfully!');
+          final wasApiKeyMissing = _apiKeyMissing;
           setState(() => _apiKeyMissing = false);
+          
+          // Show success message if this was a retry after enabling API
+          if (wasApiKeyMissing && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ API keys fetched successfully! You can now proceed.'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
         }
       } else {
         print('⚠️ No config data in response!');
@@ -1312,150 +1864,54 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     );
   }
 
-  /// Show dialog to enable API Keys API or manually get keys
-  void _showApiKeyDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.vpn_key, color: Colors.orange.shade700, size: 28),
-            const SizedBox(width: 12),
-            const Text('API Key Required'),
-          ],
+  // Open Enable API Keys API Page
+  Future<void> _openEnableApiKeysPage() async {
+    if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a Firebase project first'),
+          backgroundColor: Colors.orange,
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '⚠️ API Keys Could Not Be Fetched',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 12),
-              Text(_apiKeyMessage ?? 'The API keys need to be added manually.'),
-              const SizedBox(height: 16),
-              
-              // Option 1: Manual Entry (Recommended)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade300, width: 2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.star, color: Colors.green.shade700, size: 20),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '✅ Option 1: Manual Entry (Recommended)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('1. Click "Get API Key" button below'),
-                    const Text('2. Copy the "Web API Key" from Firebase settings'),
-                    const Text('3. Return here and paste it in Step 3'),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('Get API Key from Firebase'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () async {
-                        final url = 'https://console.firebase.google.com/project/$_selectedProjectId/settings/general';
-                        if (await canLaunchUrl(Uri.parse(url))) {
-                          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // Option 2: Enable API Keys API (Advanced)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '🔧 Option 2: Enable API Keys API (Advanced)',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('1. Click "Enable API Keys API" button'),
-                    const Text('2. Sign in with: '),
-                    if (_loggedInEmail != null)
-                      SelectableText(
-                        '   $_loggedInEmail',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    const Text('3. Click "ENABLE" on the page'),
-                    const Text('4. Return here and click "Refresh"'),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.api, size: 18),
-                      label: const Text('Enable API Keys API'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () async {
-                        final url = 'https://console.cloud.google.com/apis/library/apikeys.googleapis.com?project=$_selectedProjectId';
-                        if (await canLaunchUrl(Uri.parse(url))) {
-                          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
+      );
+      return;
+    }
+
+    final email = _loggedInEmail ?? '';
+    final urlString = email.isNotEmpty
+        ? 'https://console.cloud.google.com/apis/library/apikeys.googleapis.com?project=$_selectedProjectId&authuser=$email'
+        : 'https://console.cloud.google.com/apis/library/apikeys.googleapis.com?project=$_selectedProjectId';
+    final url = Uri.parse(urlString);
+
+    try {
+      bool launched = false;
+      
+      try {
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        print('External application launch failed: $e');
+      }
+
+      if (!launched) {
+        try {
+          launched = await launchUrl(url, mode: LaunchMode.platformDefault);
+        } catch (e) {
+          print('Platform default launch failed: $e');
+        }
+      }
+
+      if (!launched && mounted) {
+        _showManualUrlDialog(urlString);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening link: $e'),
+            backgroundColor: Colors.red,
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              setState(() => _apiKeyMissing = false);
-            },
-            child: const Text('Continue Without API Key'),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.of(context).pop();
-              _verifyFirebaseProject(); // Re-verify to fetch API key
-            },
-          ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
   // Open Upgrade to Blaze Plan Page

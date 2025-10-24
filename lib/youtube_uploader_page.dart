@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:minio/minio.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'services/school_context.dart';
 
 class YouTubeUploaderPage extends StatefulWidget {
   const YouTubeUploaderPage({super.key});
@@ -732,18 +733,19 @@ class _YouTubeUploaderPageState extends State<YouTubeUploaderPage> {
         return;
       }
       
-  // Generate unique filename
+  // Generate unique filename with school-specific path
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final extension = file.extension ?? 'mp4';
-      final fileName = 'videos/${timestamp}_${file.name}';
+      final schoolId = SchoolContext.currentSchoolId ?? 'default';
+      final fileName = 'schools/$schoolId/videos/${timestamp}_${file.name}';
       // Build thumbnail name by replacing original extension with .jpg
       String baseName = file.name;
       final dot = baseName.lastIndexOf('.');
       if (dot > 0) {
         baseName = baseName.substring(0, dot);
       }
-  // Store thumbnail alongside videos to simplify access/policy
-  final thumbName = 'videos/${timestamp}_${baseName}.jpg';
+  // Store thumbnail in school-specific thumbnails folder
+  final thumbName = 'schools/$schoolId/thumbnails/${timestamp}_${baseName}.jpg';
       
       // Get file size without loading into memory
       late int fileSize;

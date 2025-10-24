@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'services/school_context.dart';
 
 class AdminUsersPage extends StatelessWidget {
   final String currentUserId;
@@ -48,6 +49,7 @@ class AdminUsersPage extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('users')
+            .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/school_context.dart';
 
 class AdminPostPage extends StatefulWidget {
   final String currentUserId;
@@ -22,6 +23,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
       'senderRole': 'admin',
       'senderName': 'School Admin',
       'timestamp': FieldValue.serverTimestamp(),
+      'schoolId': SchoolContext.currentSchoolId,
     });
     // Optional: enqueue a notification doc that a backend Cloud Function can send to topic 'all'
     try {
@@ -30,6 +32,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
         'body': msg,
         'topic': 'all',
         'createdAt': FieldValue.serverTimestamp(),
+        'schoolId': SchoolContext.currentSchoolId,
       });
     } catch (_) {}
     if (!mounted) return;

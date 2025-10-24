@@ -4,6 +4,7 @@ import '../services/ai_form_generator.dart';
 import '../widgets/ai_form_builder_dialog.dart';
 import '../widgets/dynamic_form_builder.dart';
 import '../widgets/dynamic_form_builder_enhanced.dart';
+import 'services/school_context.dart';
 
 class DynamicStudentsPage extends StatefulWidget {
   const DynamicStudentsPage({super.key});
@@ -131,6 +132,7 @@ class _DynamicStudentsPageState extends State<DynamicStudentsPage> with SingleTi
         }
       }
 
+      studentData['schoolId'] = SchoolContext.currentSchoolId;
       await FirebaseFirestore.instance.collection('students').add(studentData);
 
       // Clear form
@@ -374,7 +376,7 @@ class _DynamicStudentsPageState extends State<DynamicStudentsPage> with SingleTi
 
   Widget _buildStudentsList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('students').orderBy('createdAt', descending: true).snapshots(),
+      stream: FirebaseFirestore.instance.collection('students').where('schoolId', isEqualTo: SchoolContext.currentSchoolId).orderBy('createdAt', descending: true).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Container(

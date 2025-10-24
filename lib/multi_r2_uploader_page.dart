@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:minio/minio.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:path/path.dart' as path;
+import 'services/school_context.dart';
 
 class MultiR2UploaderPage extends StatefulWidget {
   final String currentUserId;
@@ -173,7 +174,8 @@ class _MultiR2UploaderPageState extends State<MultiR2UploaderPage> {
 
         final ts = DateTime.now().millisecondsSinceEpoch;
         final name = _sanitizeUploadName(_items[idx].file.name);
-        final fileName = 'videos/${ts}_$name';
+        final schoolId = SchoolContext.currentSchoolId ?? 'default';
+        final fileName = 'schools/$schoolId/videos/${ts}_$name';
 
         int sent = 0;
         await minio.putObject(
@@ -194,7 +196,8 @@ class _MultiR2UploaderPageState extends State<MultiR2UploaderPage> {
         String? thumbUrl;
         try {
           final thumb = await VideoCompress.getFileThumbnail(srcPath, quality: 60, position: 1000);
-          final thumbKey = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '.jpg');
+          // Thumbnail goes in school-specific thumbnails folder
+          final thumbKey = fileName.replaceFirst('videos/', 'thumbnails/').replaceFirst(RegExp(r'\.[^.]+$'), '.jpg');
           await minio.putObject(
             _bucketName,
             thumbKey,

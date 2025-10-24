@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'services/school_context.dart';
 
 class AdminManageSubjectsPage extends StatefulWidget {
   final String currentUserId;
@@ -16,9 +17,21 @@ class _AdminManageSubjectsPageState extends State<AdminManageSubjectsPage> {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
     final col = FirebaseFirestore.instance.collection('subjects');
-    final last = await col.orderBy('order', descending: true).limit(1).get().catchError((_) async => await col.get());
+    // 🔥 Filter by schoolId when getting last order
+    final last = await col
+        .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
+        .orderBy('order', descending: true)
+        .limit(1)
+        .get()
+        .catchError((_) async => await col.where('schoolId', isEqualTo: SchoolContext.currentSchoolId).get());
     final nextOrder = (last.docs.isNotEmpty ? (last.docs.first.data()['order'] as int? ?? last.docs.length) : 0) + 1;
-    await col.add({'name': name, 'order': nextOrder, 'createdAt': FieldValue.serverTimestamp()});
+    // 🔥 Add schoolId to new subject
+    await col.add({
+      'schoolId': SchoolContext.currentSchoolId,
+      'name': name,
+      'order': nextOrder,
+      'createdAt': FieldValue.serverTimestamp()
+    });
     _nameController.clear();
   }
 
@@ -82,8 +95,10 @@ class _AdminManageSubjectsPageState extends State<AdminManageSubjectsPage> {
           const Divider(height: 0),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              // 🔥 Filter subjects by schoolId
               stream: FirebaseFirestore.instance
                   .collection('subjects')
+                  .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
                   .orderBy('order', descending: false)
                   .snapshots(),
               builder: (context, snapshot) {

@@ -8,6 +8,8 @@ import 'package:minio/minio.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/school_context.dart';
 
 class AdminBackgroundImagePage extends StatefulWidget {
   const AdminBackgroundImagePage({super.key});
@@ -26,6 +28,7 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
 
   PlatformFile? _pickedFile;
   bool _uploading = false;
+  bool _isLoading = true; // Track initial data loading
   double? _progress;
   String? _status;
   String? _currentBackgroundUrl;
@@ -46,18 +49,36 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   @override
   void initState() {
     super.initState();
-    _loadR2Configuration();
-    _loadCurrentBackground();
-    _loadGradientColors();
-    _loadImageFit();
-    _loadImageOpacity();
-    _loadApplyToPage();
+    // Load all data in parallel after first frame to avoid blocking UI
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAllData();
+    });
+  }
+  
+  // Load all data in parallel for faster page load
+  Future<void> _loadAllData() async {
+    await Future.wait([
+      _loadR2Configuration(),
+      _loadGradientColors(),
+      _loadImageFit(),
+      _loadImageOpacity(),
+      _loadApplyToPage(),
+    ]);
+    // Load background last as it depends on R2 config
+    await _loadCurrentBackground();
+    
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
   
   Future<void> _loadGradientColors() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       final doc = await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_gradient')
           .get();
       if (doc.exists) {
@@ -74,8 +95,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   
   Future<void> _saveGradientColors() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_gradient')
           .set({
         'color1': _gradientColor1.value,
@@ -100,8 +124,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   
   Future<void> _loadImageFit() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       final doc = await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_image_fit')
           .get();
       if (doc.exists) {
@@ -116,8 +143,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   
   Future<void> _saveImageFit() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_image_fit')
           .set({
         'fit': _imageFit,
@@ -141,8 +171,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   
   Future<void> _loadImageOpacity() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       final doc = await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_image_opacity')
           .get();
       if (doc.exists) {
@@ -157,8 +190,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   
   Future<void> _saveImageOpacity() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_image_opacity')
           .set({
         'opacity': _imageOpacity,
@@ -182,8 +218,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
 
   Future<void> _loadApplyToPage() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       final doc = await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_apply_to')
           .get();
       if (doc.exists && mounted) {
@@ -198,8 +237,11 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
 
   Future<void> _saveApplyToPage() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
       await FirebaseFirestore.instance
-          .collection('app_config')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
           .doc('background_apply_to')
           .set({'page': _applyToPage});
       if (mounted) {
@@ -241,14 +283,38 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
 
   Future<void> _loadCurrentBackground() async {
     try {
+      final schoolId = SchoolContext.currentSchoolId;
+      
+      // Load from Firestore to get the object key
       final doc = await FirebaseFirestore.instance
-          .collection('app_config')
-          .doc('current_page_background')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background')
           .get();
-      if (doc.exists && doc.data()?['imageUrl'] != null) {
+      
+      if (doc.exists && doc.data()?['objectKey'] != null) {
+        final objectKey = doc.data()!['objectKey'];
+        
+        // Generate presigned URL
+        await _loadR2Configuration();
+        
+        final minio = Minio(
+          endPoint: '$r2AccountId.r2.cloudflarestorage.com',
+          accessKey: r2AccessKeyId,
+          secretKey: r2SecretAccessKey,
+          useSSL: true,
+        );
+        
+        final presignedUrl = await minio.presignedGetObject(r2BucketName, objectKey, expires: 3600);
+        
         setState(() {
-          _currentBackgroundUrl = doc.data()!['imageUrl'];
+          _currentBackgroundUrl = presignedUrl;
         });
+        
+        // Cache the object key
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('background_key_$schoolId', objectKey);
       }
     } catch (e) {
       debugPrint('Failed to load current background: $e');
@@ -290,11 +356,14 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
     setState(() {
       _uploading = true;
       _progress = 0.0;
-      _status = 'Deleting old background images from R2…';
+      _status = 'Uploading new background to R2…';
     });
 
     await WakelockPlus.enable();
     try {
+      final schoolId = SchoolContext.currentSchoolId;
+      debugPrint('🎨 Uploading background for school: $schoolId');
+      
       final minio = Minio(
         endPoint: '$r2AccountId.r2.cloudflarestorage.com',
         accessKey: r2AccessKeyId,
@@ -303,29 +372,12 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
         enableTrace: false,
       );
 
-      // Delete all existing images in currentPageBackgroundImage folder
-      final objectsStream = minio.listObjects(
-        r2BucketName,
-        prefix: 'currentPageBackgroundImage/',
-        recursive: true,
-      );
-
-      await for (final listResult in objectsStream) {
-        for (final obj in listResult.objects) {
-          if (obj.key != null) {
-            await minio.removeObject(r2BucketName, obj.key!);
-            debugPrint('🗑️ Deleted old background: ${obj.key}');
-          }
-        }
-      }
-
-      setState(() {
-        _status = 'Uploading new background to R2…';
-      });
-
+      // No deletion - just upload new image, old ones are kept
       final name = file.name;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final key = 'currentPageBackgroundImage/${timestamp}_$name';
+      final key = 'schools/$schoolId/background/${timestamp}_$name';
+      
+      debugPrint('📤 Uploading to R2 path: $key');
 
       int total;
       Stream<Uint8List> fileStream;
@@ -339,6 +391,8 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
       } else {
         throw Exception('No file data available');
       }
+
+      debugPrint('📦 File size: ${(total / 1024 / 1024).toStringAsFixed(2)} MB');
 
       await minio.putObject(
         r2BucketName,
@@ -355,25 +409,38 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
         },
       );
 
-      final imageUrl = r2CustomDomain.isNotEmpty
-          ? '$r2CustomDomain/$key'
-          : 'https://$r2AccountId.r2.cloudflarestorage.com/$r2BucketName/$key';
+      debugPrint('✅ Upload to R2 complete');
 
-      // Save URL to Firestore
+      // Save the R2 object key (not full URL) to Firestore
+      debugPrint('💾 Saving to Firestore...');
       await FirebaseFirestore.instance
-          .collection('app_config')
-          .doc('current_page_background')
+          .collection('schools')
+          .doc(schoolId)
+          .collection('config')
+          .doc('background')
           .set({
-        'imageUrl': imageUrl,
+        'objectKey': key, // Store the object key
         'uploadedAt': FieldValue.serverTimestamp(),
         'fileName': name,
       });
+      
+      debugPrint('✅ Saved object key to Firestore: $key');
+
+      // Generate presigned URL for immediate preview (reuse minio instance)
+      final presignedUrl = await minio.presignedGetObject(r2BucketName, key, expires: 3600);
+      debugPrint('🔗 Presigned URL generated: $presignedUrl');
+
+      // Cache the object key locally by school ID (not the presigned URL)
+      debugPrint('💾 Caching object key locally...');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('background_key_$schoolId', key);
+      debugPrint('✅ Cached successfully');
 
       setState(() {
         _uploading = false;
         _progress = null;
         _status = null;
-        _currentBackgroundUrl = imageUrl;
+        _currentBackgroundUrl = presignedUrl; // Use presigned URL for display
         _pickedFile = null;
       });
 
@@ -382,7 +449,10 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
           const SnackBar(content: Text('✓ Background uploaded successfully'))
         );
       }
+      
+      debugPrint('🎉 Upload process complete!');
     } catch (e) {
+      debugPrint('❌ Upload error: $e');
       setState(() {
         _uploading = false;
         _progress = null;
@@ -419,10 +489,19 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
 
     if (confirm == true) {
       try {
+        final schoolId = SchoolContext.currentSchoolId;
+        
+        // Remove from Firestore
         await FirebaseFirestore.instance
-            .collection('app_config')
-            .doc('current_page_background')
+            .collection('schools')
+            .doc(schoolId)
+            .collection('config')
+            .doc('background')
             .delete();
+
+        // Clear cache
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('background_url_$schoolId');
 
         setState(() {
           _currentBackgroundUrl = null;
@@ -446,452 +525,295 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[300],
       appBar: AppBar(
-        title: const Text('Current Page Background'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: Colors.grey[800]),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      body: _isLoading
+        ? Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Loading settings...',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Current Background Preview
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Current Background',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+            // Header Banner
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue[600]!, Colors.blue[400]!],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.blue.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 16),
-                    if (_currentBackgroundUrl != null)
-                      Column(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                    child: const Icon(
+                      Icons.wallpaper_rounded,
+                      size: 48,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Customize Your Background',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Upload images, customize gradients, and control appearance',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.9),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Current Background Preview
+                  _buildModernCard(
+                    title: 'Current Background',
+                    subtitle: 'Preview your active background',
+                    icon: Icons.preview_rounded,
+                    iconColor: Colors.purple,
+                    child: Column(
+                children: [
+                  if (_currentBackgroundUrl != null)
+                    Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
                             child: CachedNetworkImage(
                               imageUrl: _currentBackgroundUrl!,
-                              height: 200,
+                              height: 220,
                               width: double.infinity,
                               fit: BoxFit.cover,
                               placeholder: (context, url) => Container(
-                                height: 200,
-                                color: Colors.grey[300],
+                                height: 220,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
                                 child: const Center(
-                                  child: CircularProgressIndicator(),
+                                  child: CircularProgressIndicator(strokeWidth: 3),
                                 ),
                               ),
                               errorWidget: (context, url, error) => Container(
-                                height: 200,
-                                color: Colors.grey[300],
-                                child: const Icon(Icons.error, size: 50),
+                                height: 220,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(Icons.broken_image_rounded, size: 60, color: Colors.grey),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
                             onPressed: _removeBackground,
-                            icon: const Icon(Icons.delete_outline),
+                            icon: const Icon(Icons.delete_sweep_rounded, size: 20),
                             label: const Text('Remove Background'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
+                              backgroundColor: Colors.red[400],
                               foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      Container(
-                        height: 200,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            'Default Gradient\n(No custom background)',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Upload New Background
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Upload New Background',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Pick Image Button
-                    ElevatedButton.icon(
-                      onPressed: _uploading ? null : _pickImage,
-                      icon: const Icon(Icons.image),
-                      label: const Text('Select Image'),
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                    ),
-                    
-                    if (_pickedFile != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue[200]!),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle, color: Colors.green),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _pickedFile!.name,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            Text(
-                              '${(_pickedFile!.size / 1024 / 1024).toStringAsFixed(2)} MB',
-                              style: TextStyle(color: Colors.grey[700]),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      // Upload Button
-                      ElevatedButton.icon(
-                        onPressed: _uploading ? null : _upload,
-                        icon: const Icon(Icons.cloud_upload),
-                        label: const Text('Upload to R2'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 48),
-                        ),
-                      ),
-                    ],
-
-                    if (_uploading) ...[
-                      const SizedBox(height: 16),
-                      LinearProgressIndicator(value: _progress),
-                      const SizedBox(height: 8),
-                      Text(
-                        _status ?? 'Uploading...',
-                        style: const TextStyle(fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.amber[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.amber[300]!),
-                      ),
-                      child: const Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.amber, size: 20),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Recommended: Use landscape images (16:9 ratio) with max 2MB size for best performance.',
-                              style: TextStyle(fontSize: 12),
-                            ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Gradient Background Colors
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Fallback Gradient Colors',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'These colors show while background image is loading',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Gradient Preview
+                        ),
+                      ],
+                    )
+                  else
                     Container(
-                      height: 120,
+                      height: 220,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [_gradientColor1, _gradientColor2],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: const Center(
-                        child: Text(
-                          'Gradient Preview',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                offset: Offset(1, 1),
-                                blurRadius: 3,
-                                color: Colors.black45,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.gradient_rounded,
+                              size: 48,
+                              color: Colors.white.withOpacity(0.9),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Default Gradient',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.95),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                shadows: const [
+                                  Shadow(
+                                    offset: Offset(1, 1),
+                                    blurRadius: 4,
+                                    color: Colors.black26,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'No custom image uploaded',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 13,
+                                shadows: const [
+                                  Shadow(
+                                    offset: Offset(1, 1),
+                                    blurRadius: 3,
+                                    color: Colors.black26,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    
-                    // Color 1 Picker
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Color 1 (Top-Left)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => _showColorPicker(true),
-                          child: Container(
-                            width: 60,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _gradientColor1,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[400]!, width: 2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Color 2 Picker
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Color 2 (Bottom-Right)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => _showColorPicker(false),
-                          child: Container(
-                            width: 60,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _gradientColor2,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[400]!, width: 2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Save Gradient Button
-                    ElevatedButton.icon(
-                      onPressed: _saveGradientColors,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save Gradient Colors'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            
-            // Image Alignment / Fit Options
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Image Alignment',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Choose how the background image should fit',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
+                  const SizedBox(height: 20),
+
+                  // Upload New Background
+                  _buildModernCard(
+                    title: 'Upload New Background',
+                    subtitle: 'Select and upload a custom image',
+                    icon: Icons.cloud_upload_rounded,
+                    iconColor: Colors.green,
+                    child: Column(
+                children: [
+                  // Pick Image Button
+                  _buildActionButton(
+                    onPressed: _uploading ? null : _pickImage,
+                    icon: Icons.add_photo_alternate_rounded,
+                    label: 'Select Image File',
+                    color: Colors.blue,
+                    isOutlined: true,
+                  ),
+                  
+                  if (_pickedFile != null) ...[
                     const SizedBox(height: 16),
-                    
-                    // Image Fit Dropdown
-                    DropdownButtonFormField<String>(
-                      value: _imageFit,
-                      decoration: InputDecoration(
-                        labelText: 'Image Fit',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        prefixIcon: const Icon(Icons.aspect_ratio),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'cover',
-                          child: Row(
-                            children: [
-                              Icon(Icons.crop_free, size: 20),
-                              SizedBox(width: 8),
-                              Text('Cover (Zoom to Fill)'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'contain',
-                          child: Row(
-                            children: [
-                              Icon(Icons.fit_screen, size: 20),
-                              SizedBox(width: 8),
-                              Text('Contain (Fit Inside)'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'fill',
-                          child: Row(
-                            children: [
-                              Icon(Icons.fullscreen, size: 20),
-                              SizedBox(width: 8),
-                              Text('Fill (Stretch)'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'fitWidth',
-                          child: Row(
-                            children: [
-                              Icon(Icons.expand, size: 20),
-                              SizedBox(width: 8),
-                              Text('Fit Width'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'fitHeight',
-                          child: Row(
-                            children: [
-                              Icon(Icons.unfold_more, size: 20),
-                              SizedBox(width: 8),
-                              Text('Fit Height'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _imageFit = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Description for selected fit
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue[200]!),
+                        gradient: LinearGradient(
+                          colors: [Colors.green[50]!, Colors.green[100]!],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green[300]!, width: 2),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 24),
+                          ),
+                          const SizedBox(width: 16),
                           Expanded(
-                            child: Text(
-                              _getImageFitDescription(),
-                              style: const TextStyle(fontSize: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _pickedFile!.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${(_pickedFile!.size / 1024 / 1024).toStringAsFixed(2)} MB',
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -899,283 +821,667 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // Save Button
-                    ElevatedButton.icon(
-                      onPressed: _saveImageFit,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save Image Alignment'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 48),
+                    // Upload Button
+                    _buildActionButton(
+                      onPressed: _uploading ? null : _upload,
+                      icon: Icons.backup_rounded,
+                      label: 'Upload to Cloud Storage',
+                      color: Colors.green,
+                    ),
+                  ],
+
+                  if (_uploading) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LinearProgressIndicator(
+                              value: _progress,
+                              minHeight: 8,
+                              backgroundColor: Colors.blue[100],
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _status ?? 'Uploading...',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            // Apply To Pages Selection
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Apply Background To',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber[200]!, width: 1.5),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Choose which pages should display the background image',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _applyToPage,
-                      decoration: const InputDecoration(
-                        labelText: 'Select Pages',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.pages, color: Colors.blue),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'all',
-                          child: Row(
-                            children: [
-                              Icon(Icons.select_all, size: 20),
-                              SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('All Pages'),
-                                  Text(
-                                    'Login, Admin Home & Other Pages',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'login',
-                          child: Row(
-                            children: [
-                              Icon(Icons.login, size: 20),
-                              SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('Login Page Only'),
-                                  Text(
-                                    'First page users see',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'admin_home',
-                          child: Row(
-                            children: [
-                              Icon(Icons.home, size: 20),
-                              SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('Admin Home Only'),
-                                  Text(
-                                    'Main admin dashboard',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _applyToPage = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _saveApplyToPage,
-                        icon: const Icon(Icons.save),
-                        label: const Text('Save Page Selection'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            // Image Opacity Control
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Image Opacity',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Control background image transparency (lower = more transparent)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Opacity Slider
-                    Row(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.opacity, color: Colors.blue),
+                        Icon(Icons.tips_and_updates_rounded, color: Colors.amber[700], size: 22),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Text(
+                            'Tip: Use landscape images (16:9 ratio) with max 2MB size for optimal performance.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[800],
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+                  const SizedBox(height: 20),
+
+                  // Gradient Background Colors
+                  _buildModernCard(
+              title: 'Gradient Colors',
+              subtitle: 'Fallback colors shown while image loads',
+              icon: Icons.gradient_rounded,
+              iconColor: Colors.orange,
+              child: Column(
+                children: [
+                  // Gradient Preview
+                  Container(
+                    height: 140,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [_gradientColor1, _gradientColor2],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Live Preview',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(2, 2),
+                              blurRadius: 6,
+                              color: Colors.black38,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Color Pickers
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: Column(
+                      children: [
+                        // Color 1 Picker
+                        Row(
+                          children: [
+                            Icon(Icons.looks_one_rounded, color: Colors.grey[600], size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Top-Left Color',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[800],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _showColorPicker(true),
+                              child: Container(
+                                width: 70,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: _gradientColor1,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.white, width: 3),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _gradientColor1.withOpacity(0.4),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.colorize_rounded, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Divider(color: Colors.grey[300], height: 1),
+                        const SizedBox(height: 16),
+                        
+                        // Color 2 Picker
+                        Row(
+                          children: [
+                            Icon(Icons.looks_two_rounded, color: Colors.grey[600], size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Bottom-Right Color',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[800],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _showColorPicker(false),
+                              child: Container(
+                                width: 70,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: _gradientColor2,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.white, width: 3),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _gradientColor2.withOpacity(0.4),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.colorize_rounded, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Save Gradient Button
+                  _buildActionButton(
+                    onPressed: _saveGradientColors,
+                    icon: Icons.save_rounded,
+                    label: 'Save Gradient Colors',
+                    color: Colors.orange,
+                  ),
+                ],
+              ),
+            ),
+                  const SizedBox(height: 20),
+            
+                  // Image Alignment / Fit Options
+                  _buildModernCard(
+              title: 'Image Alignment',
+              subtitle: 'Control how the background image fits',
+              icon: Icons.aspect_ratio_rounded,
+              iconColor: Colors.indigo,
+              child: Column(
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _imageFit,
+                    decoration: InputDecoration(
+                      labelText: 'Select Fit Mode',
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      prefixIcon: Icon(Icons.fit_screen_rounded, color: Colors.indigo[400]),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'cover',
+                        child: Row(
+                          children: [
+                            Icon(Icons.crop_free_rounded, size: 20, color: Colors.indigo),
+                            SizedBox(width: 12),
+                            Text('Cover (Zoom to Fill)', style: TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'contain',
+                        child: Row(
+                          children: [
+                            Icon(Icons.fit_screen_rounded, size: 20, color: Colors.indigo),
+                            SizedBox(width: 12),
+                            Text('Contain (Fit Inside)', style: TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fill',
+                        child: Row(
+                          children: [
+                            Icon(Icons.fullscreen_rounded, size: 20, color: Colors.indigo),
+                            SizedBox(width: 12),
+                            Text('Fill (Stretch)', style: TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fitWidth',
+                        child: Row(
+                          children: [
+                            Icon(Icons.swap_horiz_rounded, size: 20, color: Colors.indigo),
+                            SizedBox(width: 12),
+                            Text('Fit Width', style: TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fitHeight',
+                        child: Row(
+                          children: [
+                            Icon(Icons.swap_vert_rounded, size: 20, color: Colors.indigo),
+                            SizedBox(width: 12),
+                            Text('Fit Height', style: TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _imageFit = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Description for selected fit
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.indigo[50]!, Colors.indigo[100]!.withOpacity(0.3)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.indigo[200]!, width: 1.5),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline_rounded, color: Colors.indigo[700], size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _getImageFitDescription(),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[800],
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Save Button
+                  _buildActionButton(
+                    onPressed: _saveImageFit,
+                    icon: Icons.save_rounded,
+                    label: 'Save Image Alignment',
+                    color: Colors.indigo,
+                  ),
+                ],
+              ),
+            ),
+            
+                  const SizedBox(height: 20),
+            
+                  // Apply To Pages Selection
+                  _buildModernCard(
+              title: 'Apply To Pages',
+              subtitle: 'Choose where to display the background',
+              icon: Icons.pages_rounded,
+              iconColor: Colors.teal,
+              child: Column(
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _applyToPage,
+                    decoration: InputDecoration(
+                      labelText: 'Select Pages',
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      prefixIcon: Icon(Icons.layers_rounded, color: Colors.teal[400]),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Row(
+                          children: [
+                            Icon(Icons.select_all_rounded, size: 18, color: Colors.teal),
+                            SizedBox(width: 8),
+                            Text('All Pages', style: TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'login',
+                        child: Row(
+                          children: [
+                            Icon(Icons.login_rounded, size: 18, color: Colors.teal),
+                            SizedBox(width: 8),
+                            Text('Login Page Only', style: TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'admin_home',
+                        child: Row(
+                          children: [
+                            Icon(Icons.home_rounded, size: 18, color: Colors.teal),
+                            SizedBox(width: 8),
+                            Text('Admin Home Only', style: TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _applyToPage = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _buildActionButton(
+                    onPressed: _saveApplyToPage,
+                    icon: Icons.save_rounded,
+                    label: 'Save Page Selection',
+                    color: Colors.teal,
+                  ),
+                ],
+              ),
+            ),
+                  const SizedBox(height: 20),
+            
+                  // Image Opacity Control
+                  _buildModernCard(
+              title: 'Image Opacity',
+              subtitle: 'Control background transparency',
+              icon: Icons.opacity_rounded,
+              iconColor: Colors.pink,
+              child: Column(
+                children: [
+                  // Visual Opacity Display
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.pink[50]!, Colors.pink[100]!.withOpacity(0.3)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.visibility_rounded, color: Colors.pink[700], size: 32),
+                        const SizedBox(width: 16),
+                        Text(
+                          '${(_imageOpacity * 100).toInt()}%',
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.pink[700],
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Opacity Slider
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Transparency Level',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                              fontSize: 14,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.pink[100],
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${(_imageOpacity * 100).toInt()}%',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.pink[700],
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SliderTheme(
+                        data: SliderThemeData(
+                          activeTrackColor: Colors.pink[400],
+                          inactiveTrackColor: Colors.pink[100],
+                          thumbColor: Colors.pink[600],
+                          overlayColor: Colors.pink.withOpacity(0.2),
+                          trackHeight: 6,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                        ),
+                        child: Slider(
+                          value: _imageOpacity,
+                          min: 0.05,
+                          max: 1.0,
+                          divisions: 19,
+                          label: '${(_imageOpacity * 100).toInt()}%',
+                          onChanged: (value) {
+                            setState(() => _imageOpacity = value);
+                          },
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Transparency Level',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${(_imageOpacity * 100).toInt()}%',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: _imageOpacity,
-                                min: 0.05,
-                                max: 1.0,
-                                divisions: 19,
-                                label: '${(_imageOpacity * 100).toInt()}%',
-                                onChanged: (value) {
-                                  setState(() => _imageOpacity = value);
-                                },
-                              ),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'More Transparent',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  Text(
-                                    'Less Transparent',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
+                              Icon(Icons.visibility_off_rounded, size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                'More Transparent',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Quick Preset Buttons
-                    const Text(
-                      'Quick Presets',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12,
+                          Row(
+                            children: [
+                              Text(
+                                'Less Transparent',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.visibility_rounded, size: 14, color: Colors.grey[600]),
+                            ],
+                          ),
+                        ],
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Quick Preset Buttons
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => setState(() => _imageOpacity = 0.10),
-                            child: const Text('10%'),
-                          ),
+                        Row(
+                          children: [
+                            Icon(Icons.flash_on_rounded, size: 16, color: Colors.grey[700]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Quick Presets',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => setState(() => _imageOpacity = 0.20),
-                            child: const Text('20%'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => setState(() => _imageOpacity = 0.50),
-                            child: const Text('50%'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => setState(() => _imageOpacity = 1.0),
-                            child: const Text('100%'),
-                          ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildPresetButton('10%', 0.10),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildPresetButton('20%', 0.20),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildPresetButton('50%', 0.50),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildPresetButton('100%', 1.0),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    
-                    // Save Button
-                    ElevatedButton.icon(
-                      onPressed: _saveImageOpacity,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save Image Opacity'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Save Button
+                  _buildActionButton(
+                    onPressed: _saveImageOpacity,
+                    icon: Icons.save_rounded,
+                    label: 'Save Image Opacity',
+                    color: Colors.pink,
+                  ),
+                ],
+              ),
+            ),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
           ],
+        ),
+        ),
+    );
+  }
+  
+  // Preset button helper
+  Widget _buildPresetButton(String label, double value) {
+    final isSelected = (_imageOpacity - value).abs() < 0.01;
+    return OutlinedButton(
+      onPressed: () => setState(() => _imageOpacity = value),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: isSelected ? Colors.pink[700] : Colors.grey[700],
+        side: BorderSide(
+          color: isSelected ? Colors.pink[400]! : Colors.grey[300]!,
+          width: isSelected ? 2 : 1,
+        ),
+        backgroundColor: isSelected ? Colors.pink[50] : Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          fontSize: 13,
         ),
       ),
     );
@@ -1196,6 +1502,142 @@ class _AdminBackgroundImagePageState extends State<AdminBackgroundImagePage> {
       default:
         return '';
     }
+  }
+  
+  // Modern card builder helper
+  Widget _buildModernCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [iconColor.withOpacity(0.1), iconColor.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Action button builder helper
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool isOutlined = false,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: isOutlined
+          ? OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 20),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: color,
+                side: BorderSide(color: color, width: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            )
+          : ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 20),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shadowColor: color.withOpacity(0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+    );
   }
   
   void _showColorPicker(bool isFirstColor) {

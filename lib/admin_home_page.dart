@@ -8,7 +8,9 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'notification_service.dart';
+import 'services/background_services_manager.dart';
 import 'youtube_uploader_page.dart';
+import 'services/school_context.dart';
 import 'video_upload_settings_page.dart';
 import 'r2_config_page.dart';
 import 'gemini_config_page.dart';
@@ -74,6 +76,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
     super.initState();
     
     _loadGradientColors(); // Load custom gradient colors
+    
+    // 🚀 Initialize background services AFTER UI is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      print('🎯 AdminHomePage: UI rendered, starting background services at ${DateTime.now().toIso8601String()}');
+      // Initialize background services in the background (pass context for image cache)
+      if (mounted) {
+        BackgroundServicesManager().initializeAfterUI(
+          currentUserId: widget.currentUserId,
+          context: context,
+        );
+      }
+    });
     
     // Load background image AFTER first frame is painted (non-blocking)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -661,6 +675,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                       ? 'https://img.youtube.com/vi/$videoId/hqdefault.jpg'
                                       : (result['thumbnailUrl'] as String?);
                                     await FirebaseFirestore.instance.collection('communications').add({
+                                      'schoolId': SchoolContext.currentSchoolId,  // 🔥 ADD schoolId
                                       'type': rType,
                                       'message': url,
                                       'videoId': videoId,
@@ -920,6 +935,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           onTap: () {
                             FirebaseFirestore.instance
                                 .collection('groups')
+                                .where('schoolId', isEqualTo: SchoolContext.currentSchoolId)
                                 .where('members', arrayContains: widget.currentUserId)
                                 .get()
                                 .then((snapshot) {
