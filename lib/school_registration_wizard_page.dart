@@ -5,9 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:math';
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'firebase_options.dart';
 import 'services/dynamic_firebase_options.dart';
 import 'services/firebase_project_verifier.dart';
+import 'services/school_context.dart';
 
 /// Modern step-by-step wizard for school registration
 /// Premium horizontal stepper UI similar to Google's Material Design
@@ -22,14 +26,11 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   int _currentStep = 0;
   late AnimationController _animationController;
   
-  // Step 1: School Information
-  final _formKey = GlobalKey<FormState>();
-  final _schoolNameController = TextEditingController();
-  final _adminNameController = TextEditingController();
-  final _adminEmailController = TextEditingController();
-  final _adminPhoneController = TextEditingController();
-  String? _generatedKey;
-  bool _isCreatingSchool = false;
+  // School Information (loaded from existing registration)
+  Map<String, dynamic>? _schoolData;
+  bool _isLoadingSchool = false;
+  String? _schoolId;
+  bool _isPasswordVisible = false; // For password visibility toggle
   
   // Step 2: Firebase Project Selection
   List<Map<String, dynamic>> _userProjects = [];
@@ -63,6 +64,89 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     );
     _initializeFirebaseControllers();
     _loadDefaultFirebaseValues();
+    _loadExistingSchoolData();
+  }
+  
+  Future<void> _loadExistingSchoolData() async {
+    debugPrint('🔄 Loading existing school data...');
+    setState(() => _isLoadingSchool = true);
+    
+    try {
+      // Use SchoolContext which is already initialized
+      final existingKey = SchoolContext.currentSchoolIdOrNull;
+      debugPrint('📝 School key from SchoolContext: $existingKey');
+      
+      if (existingKey != null && existingKey.isNotEmpty) {
+        _schoolId = existingKey;
+        
+        // Load school data from Firestore (using DEFAULT Firebase, not new one)
+        debugPrint('🔍 Fetching school data from Firestore for key: $existingKey');
+        final doc = await FirebaseFirestore.instance
+            .collection('school_registrations')
+            .doc(existingKey)
+            .get();
+        
+        debugPrint('📄 Document exists: ${doc.exists}');
+        
+        if (doc.exists) {
+          final data = doc.data();
+          
+          // Also fetch admin user credentials
+          debugPrint('🔍 Fetching admin credentials...');
+          final adminQuery = await FirebaseFirestore.instance
+              .collection('users')
+              .where('schoolId', isEqualTo: existingKey)
+              .where('role', isEqualTo: 'admin')
+              .limit(1)
+              .get();
+          
+          debugPrint('📄 Admin query found ${adminQuery.docs.length} results');
+          
+          if (adminQuery.docs.isNotEmpty) {
+            final adminData = adminQuery.docs.first.data();
+            debugPrint('Admin data: ${adminData.toString()}');
+            data!['adminUserId'] = adminData['userId'] ?? 'N/A';
+            data['adminPassword'] = adminData['password'] ?? 'N/A';
+            debugPrint('✅ Admin credentials loaded: userId=${data['adminUserId']}, password=${data['adminPassword']}');
+          } else {
+            debugPrint('⚠️ No admin user found for this school');
+            data!['adminUserId'] = 'N/A';
+            data['adminPassword'] = 'N/A';
+          }
+          
+          setState(() {
+            _schoolData = data;
+            _schoolData!['schoolKey'] = existingKey;
+            _isLoadingSchool = false;
+          });
+          debugPrint('✅ Loaded school data for: ${_schoolData!['schoolName']}');
+        } else {
+          setState(() => _isLoadingSchool = false);
+          debugPrint('❌ School document not found in Firestore');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('School not found. Please register first.')),
+            );
+          }
+        }
+      } else {
+        setState(() => _isLoadingSchool = false);
+        debugPrint('❌ No school key in SchoolContext');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No school key found. Please register first.')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoadingSchool = false);
+      debugPrint('❌ Error loading school: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading school: $e')),
+        );
+      }
+    }
   }
 
   void _initializeFirebaseControllers() {
@@ -108,10 +192,6 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   @override
   void dispose() {
     _animationController.dispose();
-    _schoolNameController.dispose();
-    _adminNameController.dispose();
-    _adminEmailController.dispose();
-    _adminPhoneController.dispose();
     _projectIdController.dispose();
     _debounceTimer?.cancel();
     for (var platform in _firebaseControllers.values) {
@@ -123,14 +203,12 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   }
 
   final List<String> _stepTitles = [
-    'School Info',
     'Firebase Project',
     'API Configuration',
     'Review & Complete',
   ];
 
   final List<IconData> _stepIcons = [
-    Icons.school_rounded,
     Icons.cloud_outlined,
     Icons.settings_applications_rounded,
     Icons.check_circle_outline_rounded,
@@ -272,12 +350,10 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   Widget _buildStepContent() {
     switch (_currentStep) {
       case 0:
-        return _buildSchoolRegistrationStep();
-      case 1:
         return _buildFirebaseProjectStep();
-      case 2:
+      case 1:
         return _buildAPIConfigurationStep();
-      case 3:
+      case 2:
         return _buildReviewStep();
       default:
         return Container();
@@ -351,142 +427,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   }
 
   // STEP 1: School Registration
-  Widget _buildSchoolRegistrationStep() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Google-style title
-            const Text(
-              'Tell us about your school',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w400,
-                color: Color(0xFF202124),
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'This information will help us set up your account',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            const SizedBox(height: 32),
-            
-            // Google-style text fields (minimal, clean)
-            TextFormField(
-              controller: _schoolNameController,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'School name',
-                labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              ),
-              validator: (value) => value?.isEmpty ?? true ? 'Please enter school name' : null,
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _adminNameController,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Administrator name',
-                labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              ),
-              validator: (value) => value?.isEmpty ?? true ? 'Please enter administrator name' : null,
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _adminEmailController,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Email address',
-                labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              ),
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value?.isEmpty ?? true) return 'Please enter email address';
-                if (!value!.contains('@')) return 'Please enter a valid email';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _adminPhoneController,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Phone number (optional)',
-                labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              ),
-              keyboardType: TextInputType.phone,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // STEP 2: Firebase Project Selection
+  // STEP 1: Firebase Project Selection
   Widget _buildFirebaseProjectStep() {
     // Show centered logo and connect button if not yet connected
     if (_userProjects.isEmpty && !_isLoadingProjects && _accessToken == null) {
@@ -808,6 +749,275 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
                       ),
                     ],
                   ),
+                  const Divider(height: 24),
+                  // Manual API Key Input Section
+                  Row(
+                    children: [
+                      Icon(Icons.edit_note, color: Colors.blue.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Or Enter API Keys Manually',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber.shade700),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'No apps registered yet?',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.amber.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'If you don\'t see any apps (🌐 Web, 🤖 Android, 🍎 iOS) in "Your apps" section, you need to add them first:',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildInstructionStep('1', 'In Firebase Console, look for "Add app" buttons'),
+                        _buildInstructionStep('2', 'Click the 🌐 Web icon to add Web app'),
+                        _buildInstructionStep('3', 'Give it a name (e.g., "School Management Web")'),
+                        _buildInstructionStep('4', 'After registration, you\'ll see the config with apiKey'),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => _openFirebaseConsoleApiKeys(),
+                                icon: const Icon(Icons.add_circle_outline, size: 16),
+                                label: const Text('Add Web App Manually'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.amber.shade700,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  textStyle: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isVerifyingProject ? null : _autoCreateFirebaseApps,
+                                icon: _isVerifyingProject 
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome, size: 16),
+                                label: Text(_isVerifyingProject ? 'Creating...' : 'Auto-Create All Apps'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade600,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  textStyle: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Single button to open Firebase Console
+                  ElevatedButton.icon(
+                    onPressed: () => _openFirebaseConsoleApiKeys(),
+                    icon: const Icon(Icons.open_in_browser, size: 18),
+                    label: const Text('Open Firebase Console'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  Text(
+                    '1. Click your app (Web/Android/iOS)\n2. Download config file or copy API key\n3. Upload file below or paste API key',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Upload buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _uploadAndroidConfig(),
+                          icon: const Icon(Icons.android, size: 16),
+                          label: const Text('Upload Android'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _uploadiOSConfig(),
+                          icon: const Icon(Icons.apple, size: 16),
+                          label: const Text('Upload iOS'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Web API Key Input
+                  TextField(
+                    controller: _firebaseControllers['web']!['apiKey'],
+                    decoration: InputDecoration(
+                      labelText: 'Web API Key *',
+                      hintText: 'AIzaSy...',
+                      prefixIcon: const Icon(Icons.key, size: 18),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.paste, size: 18),
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            setState(() {
+                              _firebaseControllers['web']!['apiKey']!.text = data!.text!;
+                            });
+                          }
+                        },
+                        tooltip: 'Paste from clipboard',
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  // Android API Key Input
+                  TextField(
+                    controller: _firebaseControllers['android']!['apiKey'],
+                    decoration: InputDecoration(
+                      labelText: 'Android API Key *',
+                      hintText: 'AIzaSy...',
+                      prefixIcon: const Icon(Icons.android, size: 18),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.paste, size: 18),
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            setState(() {
+                              _firebaseControllers['android']!['apiKey']!.text = data!.text!;
+                            });
+                          }
+                        },
+                        tooltip: 'Paste from clipboard',
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  // iOS API Key Input
+                  TextField(
+                    controller: _firebaseControllers['ios']!['apiKey'],
+                    decoration: InputDecoration(
+                      labelText: 'iOS API Key *',
+                      hintText: 'AIzaSy...',
+                      prefixIcon: const Icon(Icons.apple, size: 18),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.paste, size: 18),
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            setState(() {
+                              _firebaseControllers['ios']!['apiKey']!.text = data!.text!;
+                            });
+                          }
+                        },
+                        tooltip: 'Paste from clipboard',
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  // Submit Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // Mark API keys as entered manually
+                        setState(() {
+                          _apiKeyMissing = false;
+                          _billingInfo = {
+                            'billingEnabled': true,
+                            'billingPlan': 'Manual Entry',
+                          };
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✓ API keys entered manually. You can now continue to next step.'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.check_circle, size: 18),
+                      label: const Text('Submit API Keys'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'After submitting, the verification will be marked complete.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                  ),
                 ],
               ),
             ),
@@ -937,268 +1147,24 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         const Divider(),
         const SizedBox(height: 12),
         
-        // Manual Project ID Input (collapsed by default)
-        ExpansionTile(
-          leading: const Icon(Icons.edit_note, size: 20),
-          title: const Text('Enter Project ID Manually', style: TextStyle(fontSize: 13)),
-          subtitle: const Text('If your project is not listed above', style: TextStyle(fontSize: 11)),
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _projectIdController,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      labelText: 'Project ID',
-                      labelStyle: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                      prefixIcon: Icon(Icons.vpn_key, size: 20),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(color: Colors.grey.shade400),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(color: Colors.grey.shade400),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(color: Colors.blue.shade600, width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                      isDense: true,
-                      hintText: 'my-project-id',
-                      helperText: 'Auto-verifies when you finish typing',
-                    ),
-                    onChanged: (value) {
-                      setState(() => _selectedProjectId = value);
-                      // Auto-verify after user stops typing (debounce)
-                      if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-                      _debounceTimer = Timer(const Duration(seconds: 1), () {
-                        if (value.isNotEmpty) {
-                          _verifyFirebaseProject();
-                        }
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        
-        // Billing Info Display (only show when billing IS enabled or checking errors)
-        if (_billingInfo != null && (_billingInfo!['billingEnabled'] == true || _billingInfo!['billingCheckError'] != null)) ...[
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _billingInfo!['billingEnabled'] == true
-                  ? Colors.green.shade50
-                  : Colors.orange.shade50,
-              border: Border.all(
-                color: _billingInfo!['billingEnabled'] == true
-                    ? Colors.green.shade300
-                    : Colors.orange.shade300,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      _billingInfo!['billingEnabled'] == true
-                          ? Icons.check_circle
-                          : Icons.warning,
-                      color: _billingInfo!['billingEnabled'] == true
-                          ? Colors.green.shade700
-                          : Colors.orange.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _billingInfo!['billingEnabled'] == true 
-                            ? 'Billing Enabled ✅' 
-                            : 'Billing Not Enabled',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: _billingInfo!['billingEnabled'] == true
-                              ? Colors.green.shade900
-                              : Colors.orange.shade900,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24),
-                _buildInfoRow('Plan', _billingInfo!['billingPlan'] ?? 'Unknown'),
-                _buildInfoRow('Billing Account', _billingInfo!['billingAccountName'] ?? 'None'),
-                _buildInfoRow(
-                  'Status',
-                  _billingInfo!['billingEnabled'] == true ? 'Active ✅' : 'Free Tier (Spark) ⚠️',
-                ),
-                
-                // Show "Enable Billing API" button if there's a billing check error
-                if (_billingInfo!['billingCheckError'] != null && 
-                    _billingInfo!['billingCheckError'].toString().contains('Cloud Billing API')) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  Text(
-                    '⚠️ Cloud Billing API Not Enabled',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade900,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Enable the Cloud Billing API to check your billing plan.',
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.link, size: 14, color: Colors.blue.shade700),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => _openEnableBillingApiPage(),
-                            child: Text(
-                              'https://console.developers.google.com/apis/api/cloudbilling.googleapis.com/overview?project=$_selectedProjectId',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.blue.shade700,
-                                decoration: TextDecoration.underline,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        InkWell(
-                          onTap: () => _openEnableBillingApiPage(),
-                          child: Icon(Icons.open_in_new, size: 14, color: Colors.blue.shade700),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                
-                // Show "Upgrade to Blaze" button if billing is not enabled (free tier)
-                if (_billingInfo!['billingEnabled'] == false && 
-                    _billingInfo!['billingCheckError'] == null) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Your project is on Spark (Free) plan',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade900,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'To use this school management system, you need to upgrade to the Blaze (Pay as you go) plan. This enables required Firebase features.',
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.card_giftcard, color: Colors.green.shade700, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Good news: You get \$300 free credits for 90 days! Most school systems use less than \$10/month.',
-                            style: TextStyle(
-                              color: Colors.green.shade900,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.link, size: 14, color: Colors.orange.shade700),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => _openUpgradeToBlazePageBlaze(),
-                            child: Text(
-                              'https://console.firebase.google.com/project/$_selectedProjectId/usage/details',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.orange.shade700,
-                                decoration: TextDecoration.underline,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        InkWell(
-                          onTap: () => _openUpgradeToBlazePageBlaze(),
-                          child: Icon(Icons.open_in_new, size: 14, color: Colors.orange.shade700),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+        // Billing Info Display - REMOVED (not needed)
+        // Manual Project ID Input - REMOVED (not needed)
+      ],
+    );
+  }
+
+  // Helper widget for info rows - REMOVED
+  
+  // Build Step 3: Firebase API Configuration
+  Widget _buildStep3() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Step 3 content will be here
         ],
-      ], // Closes Column's children array
-    ); // Closes Column widget
+      ),
+    );
   }
 
   Widget _buildChecklistItem({
@@ -1279,6 +1245,46 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     );
   }
 
+  Widget _buildInstructionStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.blue.shade700,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade800,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -1321,7 +1327,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         // Platform Selector
         Wrap(
           spacing: 8,
-          children: ['web', 'android', 'ios', 'macos', 'windows'].map((platform) {
+          children: ['web', 'android', 'ios'].map((platform) {
             return ChoiceChip(
               label: Text(platform.toUpperCase()),
               selected: _selectedPlatform == platform,
@@ -1372,8 +1378,51 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     }).toList();
   }
 
-  // STEP 4: Review
+  // STEP 3: Review
   Widget _buildReviewStep() {
+    // Show loading state only if still loading
+    if (_isLoadingSchool) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Loading school information...',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // If not loading but still no data, show error
+    if (_schoolData == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+              SizedBox(height: 16),
+              Text(
+                'School information not available',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Please make sure you are logged in with a registered school.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: Column(
@@ -1381,7 +1430,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         children: [
           // Google-style title
           const Text(
-            'Review your information',
+            'Review & Link Firebase',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w400,
@@ -1391,7 +1440,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
           ),
           const SizedBox(height: 8),
           Text(
-            'Make sure everything looks right before completing setup',
+            'Link your Firebase project to this school',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey.shade600,
@@ -1400,175 +1449,132 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
           ),
           const SizedBox(height: 32),
           
-          // Review sections - Google style (minimal cards)
-          _buildReviewItem('School name', _schoolNameController.text),
-          _buildReviewItem('Administrator', _adminNameController.text),
-          _buildReviewItem('Email', _adminEmailController.text),
-          if (_adminPhoneController.text.isNotEmpty)
-            _buildReviewItem('Phone', _adminPhoneController.text),
+          // School Information Section
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.school_rounded, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'School Information',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildReviewItem('School Key', _schoolData!['schoolKey'] ?? _schoolId ?? 'N/A'),
+                _buildReviewItem('School Name', _schoolData!['schoolName'] ?? 'N/A'),
+                _buildReviewItem('Administrator', _schoolData!['adminName'] ?? 'N/A'),
+                _buildReviewItem('Email', _schoolData!['adminEmail'] ?? 'N/A'),
+                if (_schoolData!['adminPhone'] != null && _schoolData!['adminPhone'].toString().isNotEmpty)
+                  _buildReviewItem('Phone', _schoolData!['adminPhone']),
+                const SizedBox(height: 16),
+                Divider(color: Colors.blue.shade200, height: 1),
+                const SizedBox(height: 16),
+                Text(
+                  'Admin Login Credentials',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildReviewItem('Admin ID', _schoolData!['adminUserId'] ?? 'ADMIN001'),
+                _buildPasswordReviewItem('Password', _schoolData!['adminPassword'] ?? 'N/A'),
+              ],
+            ),
+          ),
           
           const SizedBox(height: 24),
           Divider(color: Colors.grey.shade300, height: 1),
           const SizedBox(height: 24),
           
-          _buildReviewItem('Firebase project', _projectIdController.text),
+          // Firebase Project Section
+          _buildReviewItem('Firebase Project', _projectIdController.text),
           if (_billingInfo != null)
-            _buildReviewItem('Billing plan', _billingInfo!['billingPlan'] ?? 'Unknown'),
+            _buildReviewItem('Billing Plan', _billingInfo!['billingPlan'] ?? 'Unknown'),
           
           const SizedBox(height: 32),
           
-          // Generate Key Button - Only at the end!
-          if (_generatedKey == null) ...[
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade100),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.key_rounded, color: Colors.blue.shade700, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Final step',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade800,
-                        ),
+          // Link Firebase Button
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.link_rounded, color: Colors.green.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Ready to Link',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade800,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Generate your unique school key to complete the setup',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade700,
                     ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Connect your Firebase project to ${_schoolData!['schoolName']}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade700,
                   ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isCreatingSchool ? null : _generateSchoolKey,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade600,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoadingSchool ? null : _linkFirebaseToSchool,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      child: _isCreatingSchool
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Text(
-                              'Generate school key',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                    child: _isLoadingSchool
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Link Firebase to School',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                             ),
                     ),
                   ),
                 ],
               ),
             ),
-          ] else ...[
-            // Show generated key
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade200, width: 2),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle_rounded, color: Colors.green.shade700, size: 24),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Setup complete!',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.green.shade900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Your school key',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.green.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            _generatedKey!,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.green.shade900,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _generatedKey!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text('Copied to clipboard'),
-                                behavior: SnackBarBehavior.floating,
-                                backgroundColor: Colors.grey.shade800,
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          },
-                          icon: Icon(Icons.content_copy, size: 20, color: Colors.green.shade700),
-                          tooltip: 'Copy key',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Save this key securely. You\'ll need it to access your school account.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1606,15 +1612,62 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     );
   }
 
+  Widget _buildPasswordReviewItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _isPasswordVisible ? value : '••••••••',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF202124),
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: _isPasswordVisible ? 0 : 2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                    size: 20,
+                    color: Colors.grey.shade600,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isPasswordVisible = !_isPasswordVisible;
+                    });
+                  },
+                  tooltip: _isPasswordVisible ? 'Hide password' : 'Show password',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Step Navigation
   void _onStepContinue() async {
     if (_currentStep == 0) {
-      // Just validate form, don't create school yet
-      if (_formKey.currentState!.validate()) {
-        setState(() => _currentStep++);
-      }
-    } else if (_currentStep == 1) {
-      // Validate Firebase project
+      // Step 1: Firebase project validation
       if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select or enter a Firebase project')),
@@ -1628,7 +1681,40 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         return;
       }
       setState(() => _currentStep++);
-    } else if (_currentStep == 2) {
+    } else if (_currentStep == 1) {
+      // Step 2: Validate all API keys are filled
+      bool allApiKeysFilled = true;
+      String missingKeys = '';
+      
+      // Check Web API key
+      if (_firebaseControllers['web']!['apiKey']!.text.trim().isEmpty) {
+        allApiKeysFilled = false;
+        missingKeys += 'Web API Key, ';
+      }
+      
+      // Check Android API key
+      if (_firebaseControllers['android']!['apiKey']!.text.trim().isEmpty) {
+        allApiKeysFilled = false;
+        missingKeys += 'Android API Key, ';
+      }
+      
+      // Check iOS API key
+      if (_firebaseControllers['ios']!['apiKey']!.text.trim().isEmpty) {
+        allApiKeysFilled = false;
+        missingKeys += 'iOS API Key, ';
+      }
+      
+      if (!allApiKeysFilled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Please fill all required API keys: ${missingKeys.substring(0, missingKeys.length - 2)}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+      
       setState(() => _currentStep++);
     }
   }
@@ -1640,53 +1726,48 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
   }
 
   // Create School Registration
-  Future<void> _createSchoolRegistration() async {
-    setState(() => _isCreatingSchool = true);
+  // Link Firebase to existing school
+  Future<void> _linkFirebaseToSchool() async {
+    if (_schoolId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('School ID not found')),
+      );
+      return;
+    }
+    
+    setState(() => _isLoadingSchool = true);
     
     try {
-      final key = _generateSchoolKey();
+      // Save Firebase configuration to Firestore or SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
       
-      await FirebaseFirestore.instance
-          .collection('school_registrations')
-          .doc(key)
-          .set({
-        'schoolName': _schoolNameController.text.trim(),
-        'adminName': _adminNameController.text.trim(),
-        'adminEmail': _adminEmailController.text.trim(),
-        'adminPhone': _adminPhoneController.text.trim(),
-        'schoolKey': key,
-        'createdAt': FieldValue.serverTimestamp(),
-        'active': true,
-      });
+      // Save API keys for each platform
+      await prefs.setString('firebase_web_apiKey', _firebaseControllers['web']!['apiKey']!.text);
+      await prefs.setString('firebase_android_apiKey', _firebaseControllers['android']!['apiKey']!.text);
+      await prefs.setString('firebase_ios_apiKey', _firebaseControllers['ios']!['apiKey']!.text);
+      await prefs.setString('firebase_projectId', _projectIdController.text);
       
-      setState(() {
-        _generatedKey = key;
-        _isCreatingSchool = false;
-        _currentStep++;
-      });
+      setState(() => _isLoadingSchool = false);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('School registered successfully!'),
+          SnackBar(
+            content: Text('✅ Firebase linked to ${_schoolData!['schoolName']}'),
             backgroundColor: Colors.green,
           ),
         );
+        
+        // Return to previous page
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
-      setState(() => _isCreatingSchool = false);
+      setState(() => _isLoadingSchool = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error linking Firebase: $e')),
         );
       }
     }
-  }
-
-  String _generateSchoolKey() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = Random.secure();
-    return List.generate(12, (index) => chars[random.nextInt(chars.length)]).join();
   }
 
   // Load User Projects
@@ -1864,6 +1945,282 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     );
   }
 
+  // Auto-create Web, Android, and iOS apps in Firebase
+  Future<void> _autoCreateFirebaseApps() async {
+    if (_selectedProjectId == null || _accessToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a Firebase project first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isVerifyingProject = true;
+      _apiKeyMessage = 'Creating Web, Android, and iOS apps...';
+    });
+
+    try {
+      final result = await FirebaseProjectVerifier.autoCreateAppsAndFetchConfig(
+        projectId: _selectedProjectId!,
+        accessToken: _accessToken!,
+      );
+
+      if (result != null && result['success'] == true) {
+        // Extract config data
+        final configData = result['config'];
+        final apiKeyMessage = result['apiKeyMessage'];
+        
+        if (configData != null) {
+          // Check if API keys are empty
+          bool apiKeysEmpty = true;
+          
+          // Populate all platform fields
+          for (var platform in ['web', 'android', 'ios']) {
+            if (configData.containsKey(platform)) {
+              final platformData = configData[platform] as Map<String, dynamic>;
+              platformData.forEach((key, value) {
+                if (_firebaseControllers[platform]!.containsKey(key)) {
+                  final stringValue = value?.toString() ?? '';
+                  _firebaseControllers[platform]![key]!.text = stringValue;
+                  
+                  // Check if we got actual API keys
+                  if (key == 'apiKey' || key == 'api_key' || key == 'current_key') {
+                    if (stringValue.isNotEmpty && stringValue != 'EMPTY') {
+                      apiKeysEmpty = false;
+                    }
+                  }
+                }
+              });
+            }
+          }
+
+          setState(() {
+            _billingInfo = {
+              'billingEnabled': result['billingEnabled'] ?? false,
+              'billingPlan': result['billingPlan'] ?? 'Unknown',
+            };
+            
+            // If API keys are empty, keep the warning visible
+            if (apiKeysEmpty) {
+              _apiKeyMissing = true;
+              _apiKeyMessage = apiKeyMessage ?? 'Apps created! Now copy API keys manually (see instructions below)';
+            } else {
+              _apiKeyMissing = false;
+            }
+            
+            _isVerifyingProject = false;
+          });
+
+          if (mounted) {
+            if (apiKeysEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Apps created successfully! Now manually copy the API keys from Firebase Console using the instructions below.'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 6),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Successfully created all apps and fetched API keys!'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        } else {
+          setState(() {
+            _isVerifyingProject = false;
+            _apiKeyMessage = result['message'] ?? 'Could not create apps. Please try manual method.';
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['message'] ?? 'Failed to create apps'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } else {
+        setState(() {
+          _isVerifyingProject = false;
+          _apiKeyMessage = 'Auto-create failed. Please use manual method.';
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Could not auto-create apps. Please add them manually in Firebase Console.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isVerifyingProject = false;
+        _apiKeyMessage = 'Error: $e';
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error auto-creating apps: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  // Upload and parse Android config file
+  Future<void> _uploadAndroidConfig() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+
+      if (result != null && result.files.single.bytes != null) {
+        final jsonString = utf8.decode(result.files.single.bytes!);
+        final jsonData = json.decode(jsonString);
+        
+        // Extract API key from google-services.json
+        // Structure: client[0].api_key[0].current_key
+        if (jsonData['client'] != null && jsonData['client'].isNotEmpty) {
+          final client = jsonData['client'][0];
+          
+          // Get current_key (API key)
+          if (client['api_key'] != null && client['api_key'].isNotEmpty) {
+            final apiKey = client['api_key'][0]['current_key'];
+            
+            setState(() {
+              _firebaseControllers['android']!['apiKey']!.text = apiKey ?? '';
+            });
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Android API key extracted successfully!'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          } else {
+            throw Exception('API key not found in google-services.json');
+          }
+        } else {
+          throw Exception('Invalid google-services.json format');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error reading Android config: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Upload and parse iOS config file
+  Future<void> _uploadiOSConfig() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result != null && result.files.single.bytes != null) {
+        final plistString = utf8.decode(result.files.single.bytes!);
+        
+        // Parse plist format (XML parsing with multiple patterns)
+        // Try different regex patterns for API_KEY
+        String? apiKey;
+        
+        // Pattern 1: <key>API_KEY</key>\n<string>VALUE</string>
+        var apiKeyMatch = RegExp(
+          r'<key>API_KEY</key>\s*<string>([^<]+)</string>',
+          multiLine: true,
+          caseSensitive: false,
+        ).firstMatch(plistString);
+        
+        if (apiKeyMatch != null && apiKeyMatch.group(1) != null) {
+          apiKey = apiKeyMatch.group(1)!.trim();
+        }
+        
+        // Pattern 2: Try without newlines
+        if (apiKey == null || apiKey.isEmpty) {
+          apiKeyMatch = RegExp(
+            r'<key>API_KEY</key><string>([^<]+)</string>',
+            caseSensitive: false,
+          ).firstMatch(plistString);
+          
+          if (apiKeyMatch != null && apiKeyMatch.group(1) != null) {
+            apiKey = apiKeyMatch.group(1)!.trim();
+          }
+        }
+        
+        // Pattern 3: Case variations
+        if (apiKey == null || apiKey.isEmpty) {
+          apiKeyMatch = RegExp(
+            r'<key>api_key</key>\s*<string>([^<]+)</string>',
+            multiLine: true,
+            caseSensitive: false,
+          ).firstMatch(plistString);
+          
+          if (apiKeyMatch != null && apiKeyMatch.group(1) != null) {
+            apiKey = apiKeyMatch.group(1)!.trim();
+          }
+        }
+        
+        if (apiKey != null && apiKey.isNotEmpty) {
+          setState(() {
+            _firebaseControllers['ios']!['apiKey']!.text = apiKey!;
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ iOS API key extracted successfully!'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        } else {
+          throw Exception('API_KEY not found in GoogleService-Info.plist. Please check the file format.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error reading iOS config: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
   // Open Enable API Keys API Page
   Future<void> _openEnableApiKeysPage() async {
     if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
@@ -1914,6 +2271,56 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     }
   }
 
+  // Open Firebase Console API Keys Page
+  Future<void> _openFirebaseConsoleApiKeys() async {
+    if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a Firebase project first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final email = _loggedInEmail ?? '';
+    final urlString = email.isNotEmpty
+        ? 'https://console.firebase.google.com/project/$_selectedProjectId/settings/general?authuser=$email'
+        : 'https://console.firebase.google.com/project/$_selectedProjectId/settings/general';
+    final url = Uri.parse(urlString);
+
+    try {
+      bool launched = false;
+      
+      try {
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        print('External application launch failed: $e');
+      }
+
+      if (!launched) {
+        try {
+          launched = await launchUrl(url, mode: LaunchMode.platformDefault);
+        } catch (e) {
+          print('Platform default launch failed: $e');
+        }
+      }
+
+      if (!launched && mounted) {
+        _showManualUrlDialog(urlString);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening link: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Open Upgrade to Blaze Plan Page
   Future<void> _openUpgradeToBlazePageBlaze() async {
     if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
@@ -1925,10 +2332,6 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
       );
       return;
     }
-
-    // Show confirmation dialog first
-    final confirmed = await _showUpgradeToBlazeDialog();
-    if (confirmed != true) return;
 
     // Add authuser parameter to help browser open with correct account
     final email = _loggedInEmail ?? '';
@@ -1966,8 +2369,8 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
       if (launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Opening Firebase Console. Click "Modify plan" to upgrade to Blaze.'),
-            duration: Duration(seconds: 6),
+            content: Text('✅ Opening Firebase Console billing page. Enable Blaze plan there.'),
+            duration: Duration(seconds: 4),
             backgroundColor: Colors.blue,
           ),
         );
@@ -1983,170 +2386,15 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
     }
   }
 
-  // Show upgrade to Blaze confirmation dialog
+  // Show upgrade to Blaze confirmation dialog - REMOVED, just open link directly
   Future<bool?> _showUpgradeToBlazeDialog() async {
-    final email = _loggedInEmail ?? 'Unknown';
-    
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.upgrade, color: Colors.orange.shade700, size: 28),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Upgrade to Blaze Plan', style: TextStyle(fontSize: 18)),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Current account
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade300),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.account_circle, size: 20, color: Colors.blue.shade700),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Signed in as:', style: TextStyle(fontSize: 12)),
-                          const SizedBox(height: 4),
-                          Text(
-                            email,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade900,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Free credits info
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade300, width: 2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.celebration, color: Colors.green.shade700, size: 24),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'You Get \$300 FREE Credits!',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade900,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildBulletPoint('✅ \$300 free credits for 90 days'),
-                    _buildBulletPoint('✅ Only pay after free credits are used'),
-                    _buildBulletPoint('✅ Most schools use <\$10/month'),
-                    _buildBulletPoint('✅ You can set spending limits'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // What happens next
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.grey.shade700, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'What happens next:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade800,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _buildStep('1', 'Firebase Console opens'),
-                    _buildStep('2', 'Click "Modify plan" button'),
-                    _buildStep('3', 'Select "Blaze (Pay as you go)"'),
-                    _buildStep('4', 'Link billing account (or create one)'),
-                    _buildStep('5', 'Confirm upgrade'),
-                    _buildStep('6', 'Return here and verify again'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(fontSize: 15)),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.open_in_new, size: 20),
-            label: const Text('Continue to Firebase', style: TextStyle(fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade600,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-          ),
-        ],
-      ),
-    );
+    // Just open the Firebase Console billing page directly
+    _openUpgradeToBlazePageBlaze();
+    return true;
   }
 
-  Widget _buildBulletPoint(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 13,
-          color: Colors.green.shade900,
-          height: 1.3,
-        ),
-      ),
-    );
-  }
-
+  // REMOVED - Old dialog code and duplicate methods
+  
   // Open Cloud Billing API Enable Page
   Future<void> _openEnableBillingApiPage() async {
     if (_selectedProjectId == null || _selectedProjectId!.isEmpty) {
@@ -2741,11 +2989,11 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
 
   // Complete Registration
   Future<void> _completeRegistration() async {
-    // Check if school key is generated
-    if (_generatedKey == null) {
+    // Check if school data is loaded
+    if (_schoolId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please generate your school key first'),
+          content: Text('School ID not found'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -2764,7 +3012,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
       
       await FirebaseFirestore.instance
           .collection('school_registrations')
-          .doc(_generatedKey)
+          .doc(_schoolId)
           .update({'firebaseConfig': firebaseConfig});
       
       if (mounted) {
@@ -2778,7 +3026,7 @@ class _SchoolRegistrationWizardPageState extends State<SchoolRegistrationWizardP
         
         // Navigate back and return the school key
         await Future.delayed(const Duration(milliseconds: 500));
-        Navigator.pop(context, _generatedKey);
+        Navigator.pop(context, _schoolId);
       }
     } catch (e) {
       if (mounted) {
